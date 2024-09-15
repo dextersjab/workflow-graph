@@ -4,10 +4,10 @@
 
 ## Features
 
-- **Graph-based Workflows**: Build flexible, directed workflows where nodes are customizable tasks.
-- **Synchronous & Asynchronous Support**: Define both sync and async nodes without any external dependencies.
-- **Real-time Streaming**: Built-in support for callbacks in each node, allowing real-time token streaming (e.g., for WebSockets).
-- **LangGraph Alternative**: Unlike LangGraph, WorkflowGraph provides a simpler, fully self-contained solution without needing LangChain for streaming.
+- **Graph-based workflows**: Build flexible, directed workflows where nodes are customizable tasks.
+- **Synchronous & asynchronous support**: Define both sync and async nodes without any external dependencies.
+- **Real-time streaming**: Built-in support for callbacks in each node, allowing real-time token streaming (e.g., for WebSockets).
+- **LangGraph alternative**: Unlike LangGraph, WorkflowGraph provides a simpler, fully self-contained solution without needing LangChain for streaming.
 
 ## Usage
 
@@ -22,32 +22,55 @@ def add(data, callback=None):
         callback(f"Added 1: {data} -> {result}")
     return result
 
-def multiply(data, callback=None):
-    result = data * 2
+def is_even(data, callback=None):
+    result = data % 2 == 0
     if callback:
-        callback(f"Multiplied by 2: {data} -> {result}")
+        callback(f"is_even: {data} -> {result}")
     return result
 
-async def async_multiply(data, callback=None):
-    result = data * 3
+def handle_even(data, callback=None):
     if callback:
-        callback(f"Multiplied by 3 asynchronously: {data} -> {result}")
-    return result
+        callback(f"Handling even number: {data}")
+    return f"Even: {data}"
+
+def handle_odd(data, callback=None):
+    if callback:
+        callback(f"Handling odd number: {data}")
+    return f"Odd: {data}"
 
 # Create and configure the workflow graph
 graph = WorkflowGraph()
 graph.add_node("addition", add)
-graph.add_node("multiplication", multiply)
-graph.add_node("async_multiplication", async_multiply)
+graph.add_node("is_even_check", is_even)
+graph.add_node("even_handler", handle_even)
+graph.add_node("odd_handler", handle_odd)
+
+# Define edges for the main workflow
 graph.set_entry_point("addition")
-graph.add_edge("addition", "multiplication")
-graph.add_edge("multiplication", "async_multiplication")
-graph.set_finish_point("async_multiplication")
+graph.add_edge("addition", "is_even_check")
+
+# Add conditional edges based on the result of is_even_check
+graph.add_conditional_edges(
+    "is_even_check", 
+    path=is_even, 
+    path_map={True: "even_handler", False: "odd_handler"}
+)
+
+# Set finish points
+graph.set_finish_point("even_handler")
+graph.set_finish_point("odd_handler")
 
 # Execute with streaming
 compiled_graph = graph.compile()
-asyncio.run(compiled_graph.execute(5, callback=print))
+
+async def run_workflow(input_data):
+    result = await compiled_graph.execute(input_data, callback=print)
+    print(f"Final Result: {result}")
+
+# Run the workflow
+asyncio.run(run_workflow(5))
 ```
+
 ---
 
 **Note**: This project was largely generated using AI assistance.
