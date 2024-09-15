@@ -9,6 +9,22 @@
 - **Real-time streaming**: Built-in support for callbacks in each node, allowing real-time token streaming (e.g., for WebSockets).
 - **LangGraph alternative**: Unlike LangGraph, WorkflowGraph provides a simpler, fully self-contained solution without needing LangChain for streaming.
 
+## Installation
+
+Either copy the code directly from `workflow_graph.py` or install as a dependency using `pip`.
+
+To install **WorkflowGraph** as a dependency, add the following line to your `requirements.txt`:
+
+```
+git+https://github.com/dextersjab/workflow-graph.git@main
+```
+
+Then, run:
+
+```shell
+pip install -r requirements.txt
+```
+
 ## Usage
 
 ```python
