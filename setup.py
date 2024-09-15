@@ -7,7 +7,7 @@ setup(
     author="Dexter Awoyemi",
     author_email="dexter@dextersjab.xyz",
     url="https://github.com/dextersjab/workflow-graph",
-    packages=find_packages(),
+    py_modules=['workflow_graph'],
     install_requires=[],
     license="MIT",
 )
