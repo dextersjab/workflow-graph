@@ -7,9 +7,7 @@ from typing import (
     Hashable,
     Literal,
     NamedTuple,
-    Optional,
     Sequence,
-    Union,
     get_args,
     get_origin,
     get_type_hints,
@@ -23,13 +21,13 @@ logger = logging.getLogger(__name__)
 
 class NodeSpec(NamedTuple):
     action: Callable
-    metadata: Optional[dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 class Branch(NamedTuple):
-    path: Callable[[Any], Union[Hashable, list[Hashable]]]
-    ends: Optional[dict[Hashable, str]] = None
-    then: Optional[str] = None
+    path: Callable[[Any], Hashable | list[Hashable]]
+    ends: dict[Hashable, str] | None = None
+    then: str | None = None
 
 
 class WorkflowGraph:
@@ -45,10 +43,10 @@ class WorkflowGraph:
 
     def add_node(
         self,
-        node: Union[str, Callable],
-        action: Optional[Callable] = None,
+        node: str | Callable,
+        action: Callable | None = None,
         *,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         if isinstance(node, str):
             if action is None:
@@ -87,9 +85,9 @@ class WorkflowGraph:
     def add_conditional_edges(
         self,
         source: str,
-        path: Callable[[Any], Union[Hashable, list[Hashable]]],
-        path_map: Optional[Union[dict[Hashable, str], list[str]]] = None,
-        then: Optional[str] = None,
+        path: Callable[[Any], Hashable | list[Hashable]],
+        path_map: dict[Hashable, str] | list[str] | None = None,
+        then: str | None = None,
     ) -> None:
         if self.compiled:
             logger.warning(
@@ -120,16 +118,16 @@ class WorkflowGraph:
 
     def set_conditional_entry_point(
         self,
-        path: Callable[[Any], Union[Hashable, list[Hashable]]],
-        path_map: Optional[Union[dict[Hashable, str], list[str]]] = None,
-        then: Optional[str] = None,
+        path: Callable[[Any], Hashable | list[Hashable]],
+        path_map: dict[Hashable, str] | list[str] | None = None,
+        then: str | None = None,
     ) -> None:
         return self.add_conditional_edges(START, path, path_map, then)
 
     def set_finish_point(self, key: str) -> None:
         return self.add_edge(key, END)
 
-    def validate(self, interrupt: Optional[Sequence[str]] = None) -> None:
+    def validate(self, interrupt: Sequence[str] | None = None) -> None:
         all_sources = {src for src, _ in self._all_edges}
         for start, branches in self.branches.items():
             all_sources.add(start)
@@ -212,7 +210,7 @@ class CompiledGraph:
         return self
 
     async def execute(
-        self, input_data: Any, callback: Optional[Callable[[Any], None]] = None
+        self, input_data: Any, callback: Callable[[Any], None] | None = None
     ) -> Any:
         from collections import deque
 
@@ -233,9 +231,18 @@ class CompiledGraph:
                 node_spec = self.nodes[node_name]
                 action = node_spec.action
                 if asyncio.iscoroutinefunction(action):
-                    result = await action(data, callback=callback)
+                    # Check if the action accepts a callback parameter
+                    if 'callback' in action.__code__.co_varnames:
+                        result = await action(data, callback=callback)
+                    else:
+                        result = await action(data)
                 else:
-                    result = action(data, callback=callback)
+                    # Check if the action accepts a callback parameter
+                    if 'callback' in action.__code__.co_varnames:
+                        result = action(data, callback=callback)
+                    else:
+                        result = action(data)
+                
                 if node_name in self.branches:
                     for branch in self.branches[node_name]:
                         path_result = branch.path(result)
