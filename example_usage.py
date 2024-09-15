@@ -8,43 +8,53 @@ def add(data, callback=None):
         callback(f"add: {data} -> {result}")
     return result
 
-def multiply(data, callback=None):
-    result = data * 2
+def is_even(data, callback=None):
+    result = data % 2 == 0
     if callback:
-        callback(f"multiply: {data} -> {result}")
+        callback(f"is_even: {data} -> {result}")
     return result
 
-async def async_multiply(data, callback=None):
-    result = data * 3
+def handle_even(data, callback=None):
     if callback:
-        callback(f"async_multiply: {data} -> {result}")
-    return result
+        callback(f"Handling even number: {data}")
+    return f"Even: {data}"
 
-# Create a callback function to stream results
-def stream_callback(message):
-    print(f"Stream: {message}")
+def handle_odd(data, callback=None):
+    if callback:
+        callback(f"Handling odd number: {data}")
+    return f"Odd: {data}"
 
-# Instantiate the graph
+# Create the WorkflowGraph
 graph = WorkflowGraph()
 
 # Add nodes to the graph
 graph.add_node("addition", add)
-graph.add_node("multiplication", multiply)
-graph.add_node("async_multiplication", async_multiply)
+graph.add_node("is_even_check", is_even)
+graph.add_node("even_handler", handle_even)
+graph.add_node("odd_handler", handle_odd)
 
-# Define edges to control the workflow
-graph.set_entry_point("addition")  # The first node to run is the 'addition' node
-graph.add_edge("addition", "multiplication")  # After addition, multiply the result
-graph.add_edge("multiplication", "async_multiplication")  # Async multiply next
-graph.set_finish_point("async_multiplication")  # Mark the final node
+# Define edges for the main workflow
+graph.set_entry_point("addition")
+graph.add_edge("addition", "is_even_check")
+
+# Define conditional edges based on whether the number is even or odd
+graph.add_conditional_edges(
+    "is_even_check", 
+    path=is_even, 
+    path_map={True: "even_handler", False: "odd_handler"}
+)
+
+# Set finish points
+graph.set_finish_point("even_handler")
+graph.set_finish_point("odd_handler")
 
 # Compile the graph
 compiled_graph = graph.compile()
 
-# Define a function to execute the graph
-async def run_graph(input_data):
-    result = await compiled_graph.execute(input_data, callback=stream_callback)
+# Execute the workflow
+async def run_workflow(input_data):
+    result = await compiled_graph.execute(input_data, callback=print)
     print(f"Final Result: {result}")
 
-# Run the graph with input data
-asyncio.run(run_graph(5))
+# Run with an example input
+asyncio.run(run_workflow(5))  # Try changing 5 to an even number like 4
