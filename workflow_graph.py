@@ -216,128 +216,88 @@ class CompiledGraph:
 
         queue = deque()
         visited = set()
-        # Track which nodes are ready to be processed
-        dependencies = defaultdict(set)
-        ready = set()
-
-        # Build dependency graph - first collect all nodes that have incoming edges
-        for start, ends in self.edges.items():
-            for end in ends:
-                if end != END and start != START:
-                    dependencies[end].add(start)
-
-        # Then mark nodes with no dependencies (except START edges) as ready
-        for start, ends in self.edges.items():
-            for end in ends:
-                if end != END:
-                    if start == START and not dependencies[end]:
-                        ready.add(end)
-
+        
+        logger.debug(f"Starting execution with input: {input_data}")
+        # Start with the initial input
         queue.append((START, input_data))
+        state = input_data
 
         while queue:
-            node_name, data = queue.popleft()
+            node_name, node_input = queue.popleft()
+            logger.debug(f"Processing node: {node_name} with input: {node_input}")
+            
             if node_name == END:
-                return current_state
-
-            # Only process if it's START, END, or ready
-            if node_name != START and node_name not in ready and node_name != END:
-                print(f"Node {node_name} not ready, skipping")  # Debug
-                continue
-
-            # Only skip if we've seen this exact node+state combination before
-            visit_key = (node_name, str(data))
+                logger.debug(f"Reached END node, returning state: {state}")
+                return state
+            
+            # Skip if we've seen this exact node+state combination before
+            visit_key = (node_name, str(node_input))
             if visit_key in visited:
-                print(f"Skipping already visited node: {node_name}")  # Debug
+                logger.debug(f"Skipping already visited node: {node_name}")
                 continue
-
             visited.add(visit_key)
 
+            # Handle regular nodes
             if node_name in self.nodes:
                 node_spec = self.nodes[node_name]
                 action = node_spec.action
-                if asyncio.iscoroutinefunction(action):
-                    # Check if the action accepts a callback parameter
-                    if 'callback' in action.__code__.co_varnames:
-                        result = await action(current_state, callback=callback)
-                    else:
-                        result = await action(current_state)
-                else:
-                    # Check if the action accepts a callback parameter
-                    if 'callback' in action.__code__.co_varnames:
-                        result = action(current_state, callback=callback)
-                    else:
-                        result = action(current_state)
+                logger.debug(f"Executing action for node {node_name}: {action.__name__}")
 
-                current_state = result  # Update the current state
-
-                # Update ready nodes
-                if node_name in ready:
-                    ready.remove(node_name)  # Remove this node from ready set
-                for end in self.edges.get(node_name, []):
-                    if end != END:
-                        dependencies[end].remove(node_name)
-                        if not dependencies[end]:  # All dependencies met
-                            ready.add(end)
-
-                if node_name in self.branches:
-                    for branch in self.branches[node_name]:
-                        path_result = branch.path(result)
-                        destinations = (
-                            path_result if isinstance(path_result, list) else [path_result]
-                        )
-                        if branch.ends:
-                            destinations = [
-                                branch.ends.get(dest, dest) for dest in destinations
-                            ]
-                        if branch.then:
-                            for dest in destinations:
-                                if dest == END:
-                                    queue.append((END, current_state))
-                                else:
-                                    queue.append((dest, current_state))
-                            queue.append((branch.then, current_state))
+                try:
+                    if asyncio.iscoroutinefunction(action):
+                        if 'callback' in action.__code__.co_varnames:
+                            state = await action(node_input, callback=callback)
                         else:
-                            for dest in destinations:
-                                if dest == END:
-                                    queue.append((END, current_state))
-                                else:
-                                    queue.append((dest, current_state))
+                            state = await action(node_input)
+                    else:
+                        if 'callback' in action.__code__.co_varnames:
+                            state = action(node_input, callback=callback)
+                        else:
+                            state = action(node_input)
+                    logger.debug(f"Node {node_name} execution result: {state}")
+                except Exception as e:
+                    logger.error(f"Error executing node {node_name}: {e}")
+                    raise
+
+                # Handle conditional branches
+                if node_name in self.branches:
+                    logger.debug(f"Processing branches for node {node_name}")
+                    for branch in self.branches[node_name]:
+                        path_result = state
+                        logger.debug(f"Branch path result: {path_result}")
+                        if branch.ends and path_result in branch.ends:
+                            next_node = branch.ends[path_result]
+                            logger.debug(f"Adding next node from branch: {next_node}")
+                            queue.append((next_node, node_input))
+                        if branch.then:
+                            logger.debug(f"Adding then node from branch: {branch.then}")
+                            queue.append((branch.then, node_input))
+                
+                # Handle regular edges
                 elif node_name in self.edges:
+                    logger.debug(f"Processing edges for node {node_name}")
                     for dest in self.edges[node_name]:
-                        queue.append((dest, current_state))
-                else:
-                    return current_state
+                        logger.debug(f"Adding next node from edge: {dest}")
+                        queue.append((dest, state))
+
+            # Handle START node
             elif node_name == START:
+                logger.debug("Processing START node")
                 if node_name in self.branches:
                     for branch in self.branches[node_name]:
-                        path_result = branch.path(data)
-                        destinations = (
-                            path_result if isinstance(path_result, list) else [path_result]
-                        )
-                        if branch.ends:
-                            destinations = [
-                                branch.ends.get(dest, dest) for dest in destinations
-                            ]
+                        path_result = branch.path(node_input)
+                        logger.debug(f"START branch path result: {path_result}")
+                        if branch.ends and path_result in branch.ends:
+                            next_node = branch.ends[path_result]
+                            logger.debug(f"Adding next node from START branch: {next_node}")
+                            queue.append((next_node, node_input))
                         if branch.then:
-                            for dest in destinations:
-                                if dest == END:
-                                    queue.append((END, current_state))
-                                else:
-                                    queue.append((dest, current_state))
-                            queue.append((branch.then, current_state))
-                        else:
-                            for dest in destinations:
-                                if dest == END:
-                                    queue.append((END, current_state))
-                                else:
-                                    queue.append((dest, current_state))
+                            logger.debug(f"Adding then node from START branch: {branch.then}")
+                            queue.append((branch.then, node_input))
                 elif node_name in self.edges:
                     for dest in self.edges[node_name]:
-                        queue.append((dest, current_state))
-                else:
-                    return current_state
-            else:
-                raise ValueError(f"Node '{node_name}' not found in the graph")
+                        logger.debug(f"Adding next node from START edge: {dest}")
+                        queue.append((dest, node_input))
 
-        return current_state
+        logger.debug(f"Execution complete, returning state: {state}")
+        return state
