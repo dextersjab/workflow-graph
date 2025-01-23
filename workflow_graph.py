@@ -216,16 +216,42 @@ class CompiledGraph:
 
         queue = deque()
         visited = set()
+        # Track which nodes are ready to be processed
+        dependencies = defaultdict(set)
+        ready = set()
+
+        # Build dependency graph - first collect all nodes that have incoming edges
+        for start, ends in self.edges.items():
+            for end in ends:
+                if end != END and start != START:
+                    dependencies[end].add(start)
+
+        # Then mark nodes with no dependencies (except START edges) as ready
+        for start, ends in self.edges.items():
+            for end in ends:
+                if end != END:
+                    if start == START and not dependencies[end]:
+                        ready.add(end)
 
         queue.append((START, input_data))
 
         while queue:
             node_name, data = queue.popleft()
             if node_name == END:
-                return data
-            if node_name in visited:
+                return current_state
+
+            # Only process if it's START, END, or ready
+            if node_name != START and node_name not in ready and node_name != END:
+                print(f"Node {node_name} not ready, skipping")  # Debug
                 continue
-            visited.add(node_name)
+
+            # Only skip if we've seen this exact node+state combination before
+            visit_key = (node_name, str(data))
+            if visit_key in visited:
+                print(f"Skipping already visited node: {node_name}")  # Debug
+                continue
+
+            visited.add(visit_key)
 
             if node_name in self.nodes:
                 node_spec = self.nodes[node_name]
@@ -233,16 +259,27 @@ class CompiledGraph:
                 if asyncio.iscoroutinefunction(action):
                     # Check if the action accepts a callback parameter
                     if 'callback' in action.__code__.co_varnames:
-                        result = await action(data, callback=callback)
+                        result = await action(current_state, callback=callback)
                     else:
-                        result = await action(data)
+                        result = await action(current_state)
                 else:
                     # Check if the action accepts a callback parameter
                     if 'callback' in action.__code__.co_varnames:
-                        result = action(data, callback=callback)
+                        result = action(current_state, callback=callback)
                     else:
-                        result = action(data)
-                
+                        result = action(current_state)
+
+                current_state = result  # Update the current state
+
+                # Update ready nodes
+                if node_name in ready:
+                    ready.remove(node_name)  # Remove this node from ready set
+                for end in self.edges.get(node_name, []):
+                    if end != END:
+                        dependencies[end].remove(node_name)
+                        if not dependencies[end]:  # All dependencies met
+                            ready.add(end)
+
                 if node_name in self.branches:
                     for branch in self.branches[node_name]:
                         path_result = branch.path(result)
@@ -256,21 +293,21 @@ class CompiledGraph:
                         if branch.then:
                             for dest in destinations:
                                 if dest == END:
-                                    queue.append((END, result))
+                                    queue.append((END, current_state))
                                 else:
-                                    queue.append((dest, result))
-                            queue.append((branch.then, result))
+                                    queue.append((dest, current_state))
+                            queue.append((branch.then, current_state))
                         else:
                             for dest in destinations:
                                 if dest == END:
-                                    queue.append((END, result))
+                                    queue.append((END, current_state))
                                 else:
-                                    queue.append((dest, result))
+                                    queue.append((dest, current_state))
                 elif node_name in self.edges:
                     for dest in self.edges[node_name]:
-                        queue.append((dest, result))
+                        queue.append((dest, current_state))
                 else:
-                    return result
+                    return current_state
             elif node_name == START:
                 if node_name in self.branches:
                     for branch in self.branches[node_name]:
@@ -285,22 +322,22 @@ class CompiledGraph:
                         if branch.then:
                             for dest in destinations:
                                 if dest == END:
-                                    queue.append((END, data))
+                                    queue.append((END, current_state))
                                 else:
-                                    queue.append((dest, data))
-                            queue.append((branch.then, data))
+                                    queue.append((dest, current_state))
+                            queue.append((branch.then, current_state))
                         else:
                             for dest in destinations:
                                 if dest == END:
-                                    queue.append((END, data))
+                                    queue.append((END, current_state))
                                 else:
-                                    queue.append((dest, data))
+                                    queue.append((dest, current_state))
                 elif node_name in self.edges:
                     for dest in self.edges[node_name]:
-                        queue.append((dest, data))
+                        queue.append((dest, current_state))
                 else:
-                    return data
+                    return current_state
             else:
                 raise ValueError(f"Node '{node_name}' not found in the graph")
 
-        return data
+        return current_state
