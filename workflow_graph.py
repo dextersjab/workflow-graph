@@ -66,8 +66,6 @@ class WorkflowGraph:
             if node_name in (START, END):
                 raise ValueError(f"Node `{node_name}` is reserved.")
             self.nodes[node_name] = NodeSpec(action=node, metadata=metadata)
-        else:
-            raise ValueError("Invalid arguments for add_node")
 
     def add_edge(self, start_key: str, end_key: str) -> None:
         if self.compiled:
