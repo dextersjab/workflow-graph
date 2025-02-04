@@ -87,6 +87,8 @@ async def run_workflow(input_data):
 asyncio.run(run_workflow(5))
 ```
 
+![](graph.png)
+
 ---
 
 **Note**: This project was largely generated using AI assistance.
