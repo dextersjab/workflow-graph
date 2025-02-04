@@ -207,9 +207,7 @@ class CompiledGraph:
         self.compiled = True
         return self
 
-    async def execute(
-        self, input_data: Any, callback: Callable[[Any], None] | None = None
-    ) -> Any:
+    async def execute(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
         from collections import deque
 
         queue = deque()
@@ -261,15 +259,16 @@ class CompiledGraph:
                 if node_name in self.branches:
                     logger.debug(f"Processing branches for node {node_name}")
                     for branch in self.branches[node_name]:
-                        path_result = state
-                        logger.debug(f"Branch path result: {path_result}")
-                        if branch.ends and path_result in branch.ends:
-                            next_node = branch.ends[path_result]
+                        # Execute the path function to get the transformed value for branching
+                        path_value = branch.path(state)
+                        logger.debug(f"Branch path value: {path_value}")
+                        if branch.ends and path_value in branch.ends:
+                            next_node = branch.ends[path_value]
                             logger.debug(f"Adding next node from branch: {next_node}")
-                            queue.append((next_node, node_input))
+                            queue.append((next_node, state))
                         if branch.then:
                             logger.debug(f"Adding then node from branch: {branch.then}")
-                            queue.append((branch.then, node_input))
+                            queue.append((branch.then, state))
                 
                 # Handle regular edges
                 elif node_name in self.edges:
@@ -283,10 +282,10 @@ class CompiledGraph:
                 logger.debug("Processing START node")
                 if node_name in self.branches:
                     for branch in self.branches[node_name]:
-                        path_result = branch.path(node_input)
-                        logger.debug(f"START branch path result: {path_result}")
-                        if branch.ends and path_result in branch.ends:
-                            next_node = branch.ends[path_result]
+                        path_value = branch.path(node_input)
+                        logger.debug(f"START branch path value: {path_value}")
+                        if branch.ends and path_value in branch.ends:
+                            next_node = branch.ends[path_value]
                             logger.debug(f"Adding next node from START branch: {next_node}")
                             queue.append((next_node, node_input))
                         if branch.then:
