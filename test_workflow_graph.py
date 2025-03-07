@@ -1,6 +1,7 @@
 import pytest
 import logging
 from workflow_graph import WorkflowGraph, START, END
+import asyncio
 
 # Configure logging
 logger = logging.getLogger('workflow_graph')
@@ -18,17 +19,21 @@ ch.setFormatter(formatter)
 logger.addHandler(ch)
 
 # Test fixtures and helper functions
-def add_one(x):
+def add_one(x: int) -> int:
+    print('add_one')
     return x + 1
 
-def multiply_by_two(x):
+def multiply_by_two(x: int) -> int:
     return x * 2
 
-def is_even(x):
+def is_even(x: int) -> bool:
     return x % 2 == 0
 
-async def async_add_one(x):
+async def async_add_one(x: int) -> int:
     return x + 1
+
+def str_to_int(x: str) -> int:
+    return int(x)
 
 def test_basic_graph_creation():
     graph = WorkflowGraph()
@@ -132,6 +137,7 @@ async def test_conditional_workflow_execution():
     
     # Test with even number
     result_even = await compiled.execute(2)
+    print(f'{result_even=}')
     assert result_even == 3  # 2 is even -> add_one -> 3
     
     # Test with odd number
@@ -192,6 +198,156 @@ def test_graph_validation():
     graph.set_finish_point("node1")
     with pytest.raises(ValueError):
         graph.compile()
+
+def test_type_validation():
+    graph = WorkflowGraph()
+    
+    # Test compatible types
+    graph.add_node("add", add_one)
+    graph.add_node("multiply", multiply_by_two)
+    graph.set_entry_point("add")
+    graph.add_edge("add", "multiply")
+    graph.set_finish_point("multiply")
+    # Should compile without errors
+    graph.compile()
+    
+    # Test incompatible types
+    graph = WorkflowGraph()
+    graph.add_node("str_to_int", str_to_int)
+    graph.add_node("is_even", is_even)
+    graph.set_entry_point("is_even")
+    graph.add_edge("is_even", "str_to_int")  # bool -> str is incompatible
+    graph.set_finish_point("str_to_int")
+    
+    with pytest.raises(ValueError, match="Type mismatch"):
+        graph.compile()
+
+def test_type_validation_with_branches():
+    graph = WorkflowGraph()
+    
+    # Test compatible types in conditional branches
+    graph.add_node("check", is_even)
+    graph.add_node("handle_even", add_one)
+    graph.add_node("handle_odd", multiply_by_two)
+    
+    graph.set_entry_point("check")
+    graph.add_conditional_edges(
+        "check",
+        is_even,
+        {True: "handle_even", False: "handle_odd"}
+    )
+    graph.set_finish_point("handle_even")
+    graph.set_finish_point("handle_odd")
+    
+    # Should compile without errors since both handlers expect int
+    graph.compile()
+    
+    # Test incompatible types in conditional branches
+    graph = WorkflowGraph()
+    graph.add_node("check", is_even)
+    graph.add_node("str_to_int", str_to_int)  # expects str, but check outputs bool
+    
+    graph.set_entry_point("check")
+    graph.add_conditional_edges(
+        "check",
+        is_even,
+        {True: "str_to_int"}
+    )
+    graph.set_finish_point("str_to_int")
+    
+    with pytest.raises(ValueError, match="Type mismatch"):
+        graph.compile()
+
+def test_retry_policy():
+    attempts = 0
+    
+    def failing_node(x: int) -> int:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:  # Fail twice, succeed on third try
+            raise ValueError("Temporary failure")
+        return x + 1
+    
+    graph = WorkflowGraph()
+    graph.add_node("retry_node", failing_node, retries=3, backoff_factor=0.1)  # Fast backoff for testing
+    graph.set_entry_point("retry_node")
+    graph.set_finish_point("retry_node")
+    
+    compiled = graph.compile()
+    result = asyncio.run(compiled.execute(1))
+    assert result == 2  # Should succeed after retries
+    assert attempts == 3  # Should have attempted exactly 3 times
+
+def test_error_handler():
+    def failing_node(x: int) -> int:
+        raise ValueError("Permanent failure")
+    
+    def error_handler(x: int) -> str:
+        return f"Error handled: {x}"
+    
+    graph = WorkflowGraph()
+    graph.add_node("main_node", failing_node, on_error="handle_error")
+    graph.add_node("handle_error", error_handler)
+    
+    graph.set_entry_point("main_node")
+    graph.set_finish_point("handle_error")
+    
+    compiled = graph.compile()
+    result = asyncio.run(compiled.execute(1))
+    assert result == "Error handled: 1"
+
+@pytest.mark.asyncio
+async def test_retry_then_error_handler():
+    attempts = 0
+    
+    def failing_node(x: int) -> int:
+        nonlocal attempts
+        attempts += 1
+        raise ValueError(f"Failure #{attempts}")
+    
+    def error_handler(x: int) -> str:
+        return f"Gave up after {attempts} attempts with input {x}"
+    
+    graph = WorkflowGraph()
+    graph.add_node(
+        "retry_node",
+        failing_node,
+        retries=2,
+        backoff_factor=0.1,
+        on_error="handle_error"
+    )
+    graph.add_node("handle_error", error_handler)
+    
+    graph.set_entry_point("retry_node")
+    graph.set_finish_point("handle_error")
+    
+    compiled = graph.compile()
+    result = await compiled.execute(1)
+    
+    assert attempts == 3  # Initial attempt + 2 retries
+    assert result == "Gave up after 3 attempts with input 1"
+
+@pytest.mark.asyncio
+async def test_async_retry():
+    attempts = 0
+    
+    async def async_failing_node(x: int) -> int:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise ValueError("Temporary async failure")
+        return x + 1
+    
+    graph = WorkflowGraph()
+    graph.add_node("async_retry", async_failing_node, retries=3, backoff_factor=0.1)
+    graph.set_entry_point("async_retry")
+    graph.set_finish_point("async_retry")
+    
+    compiled = graph.compile()
+    result = await compiled.execute(1)
+    
+    assert result == 2
+    assert attempts == 3
 
 if __name__ == "__main__":
     pytest.main([__file__]) 

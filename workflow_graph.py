@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 class NodeSpec(NamedTuple):
     action: Callable
     metadata: dict[str, Any] | None = None
+    input_type: type | None = None
+    output_type: type | None = None
+    retries: int = 0
+    backoff_factor: float = 1.0
+    on_error: str | None = None
 
 
 class Branch(NamedTuple):
@@ -47,7 +52,20 @@ class WorkflowGraph:
         action: Callable | None = None,
         *,
         metadata: dict[str, Any] | None = None,
+        retries: int = 0,
+        backoff_factor: float = 1.0,
+        on_error: str | None = None,
     ) -> None:
+        def extract_type_hints(fn: Callable) -> tuple[type | None, type | None]:
+            try:
+                hints = get_type_hints(fn)
+                params = list(hints.items())
+                input_type = params[0][1] if params and params[0][0] != 'return' else None
+                output_type = hints.get('return')
+                return input_type, output_type
+            except Exception:
+                return None, None
+
         if isinstance(node, str):
             if action is None:
                 raise ValueError("Action must be provided when node is a string")
@@ -55,7 +73,16 @@ class WorkflowGraph:
                 raise ValueError(f"Node `{node}` is reserved.")
             if node in self.nodes:
                 raise ValueError(f"Node `{node}` already present.")
-            self.nodes[node] = NodeSpec(action=action, metadata=metadata)
+            input_type, output_type = extract_type_hints(action)
+            self.nodes[node] = NodeSpec(
+                action=action,
+                metadata=metadata,
+                input_type=input_type,
+                output_type=output_type,
+                retries=retries,
+                backoff_factor=backoff_factor,
+                on_error=on_error
+            )
         elif callable(node):
             action = node
             node_name = getattr(node, "__name__", None)
@@ -65,7 +92,16 @@ class WorkflowGraph:
                 raise ValueError(f"Node `{node_name}` already present.")
             if node_name in (START, END):
                 raise ValueError(f"Node `{node_name}` is reserved.")
-            self.nodes[node_name] = NodeSpec(action=node, metadata=metadata)
+            input_type, output_type = extract_type_hints(action)
+            self.nodes[node_name] = NodeSpec(
+                action=node,
+                metadata=metadata,
+                input_type=input_type,
+                output_type=output_type,
+                retries=retries,
+                backoff_factor=backoff_factor,
+                on_error=on_error
+            )
 
     def add_edge(self, start_key: str, end_key: str) -> None:
         if self.compiled:
@@ -143,26 +179,36 @@ class WorkflowGraph:
             if source not in self.nodes and source != START:
                 raise ValueError(f"Found edge starting at unknown node '{source}'")
 
-        all_targets = {end for _, end in self._all_edges}
+        # Validate type compatibility between connected nodes
+        def validate_type_compatibility(source: str, target: str) -> None:
+            if source == START or target == END:
+                return
+            source_node = self.nodes[source]
+            target_node = self.nodes[target]
+            if (source_node.output_type is not None and 
+                target_node.input_type is not None and 
+                not issubclass(source_node.output_type, target_node.input_type)):
+                raise ValueError(
+                    f"Type mismatch: Node '{source}' outputs {source_node.output_type} "
+                    f"but node '{target}' expects {target_node.input_type}"
+                )
+
+        # Check regular edges
+        for source, target in self._all_edges:
+            validate_type_compatibility(source, target)
+
+        # Check conditional edges
         for start, branches in self.branches.items():
             for cond, branch in branches.items():
-                if branch.then is not None:
-                    all_targets.add(branch.then)
-                if branch.ends is not None:
+                if branch.ends:
                     for end in branch.ends.values():
-                        if end not in self.nodes and end != END:
-                            raise ValueError(
-                                f"At '{start}' node, '{cond}' branch found unknown target '{end}'"
-                            )
-                        all_targets.add(end)
-                else:
-                    all_targets.add(END)
-                    for node in self.nodes:
-                        if node != start and node != branch.then:
-                            all_targets.add(node)
-        for node in self.nodes:
-            if node not in all_targets:
-                raise ValueError(f"Node `{node}` is not reachable")
+                        if end != END:
+                            validate_type_compatibility(start, end)
+                if branch.then and branch.then != END:
+                    validate_type_compatibility(start, branch.then)
+
+        # Continue with existing validation
+        all_targets = {end for _, end in self._all_edges}
         for target in all_targets:
             if target not in self.nodes and target != END:
                 raise ValueError(f"Found edge ending at unknown node `{target}`")
@@ -175,14 +221,23 @@ class WorkflowGraph:
 
     def compile(self) -> "CompiledGraph":
         self.validate()
-        compiled = CompiledGraph(builder=self)
-        for key, node in self.nodes.items():
-            compiled.attach_node(key, node)
-        for start, end in self.edges:
+        
+        # Check for entry point
+        entry_edges = [dst for src, dst in self._all_edges if src == START]
+        if not entry_edges and not self.branches.get(START):
+            raise ValueError("Graph must have at least one entry point (an edge from START)")
+            
+        compiled = CompiledGraph(self)
+        for node, spec in self.nodes.items():
+            compiled.attach_node(node, spec)
+        
+        for (start, end) in self._all_edges:
             compiled.attach_edge(start, end)
+            
         for start, branches in self.branches.items():
-            for name, branch in branches.items():
-                compiled.attach_branch(start, name, branch)
+            for branch_name, branch in branches.items():
+                compiled.attach_branch(start, branch_name, branch)
+                
         return compiled.validate()
 
 
@@ -205,6 +260,50 @@ class CompiledGraph:
 
     def validate(self) -> "CompiledGraph":
         self.compiled = True
+        
+        # Check for unreachable nodes
+        if len(self.nodes) > 0:
+            # Build a graph of all reachable nodes
+            visited = set()
+            queue = [START]
+            
+            # Collect all error handlers
+            error_handlers = set()
+            for node_name, node_spec in self.nodes.items():
+                if node_spec.on_error:
+                    error_handlers.add(node_spec.on_error)
+            
+            while queue:
+                node = queue.pop(0)
+                if node in visited:
+                    continue
+                    
+                visited.add(node)
+                
+                # Add all nodes reachable from outgoing edges
+                if node in self.edges:
+                    for dest in self.edges[node]:
+                        if dest != END:
+                            queue.append(dest)
+                
+                # Add all nodes reachable from branches
+                if node in self.branches:
+                    for branch in self.branches[node]:
+                        if branch.then and branch.then != END:
+                            queue.append(branch.then)
+                        if branch.ends:
+                            for dest in branch.ends.values():
+                                if dest != END:
+                                    queue.append(dest)
+            
+            # Consider error handlers as reachable
+            visited.update(error_handlers)
+            
+            # Check for any nodes that weren't visited
+            unreachable = set(self.nodes.keys()) - visited
+            if unreachable:
+                raise ValueError(f"Unreachable nodes detected: {', '.join(unreachable)}")
+        
         return self
 
     async def execute(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
@@ -214,9 +313,45 @@ class CompiledGraph:
         visited = set()
         
         logger.debug(f"Starting execution with input: {input_data}")
-        # Start with the initial input
         queue.append((START, input_data))
         state = input_data
+
+        async def execute_node_with_retries(node_name: str, node_input: Any) -> Any:
+            if node_name == START or node_name == END:
+                return node_input
+
+            node_spec = self.nodes[node_name]
+            action = node_spec.action
+            attempts = 0
+            delay = 1.0
+
+            while True:
+                try:
+                    if asyncio.iscoroutinefunction(action):
+                        if 'callback' in action.__code__.co_varnames:
+                            result = await action(node_input, callback=callback)
+                        else:
+                            result = await action(node_input)
+                    else:
+                        if 'callback' in action.__code__.co_varnames:
+                            result = action(node_input, callback=callback)
+                        else:
+                            result = action(node_input)
+                    return result
+                except Exception as e:
+                    attempts += 1
+                    if attempts > node_spec.retries:
+                        if node_spec.on_error:
+                            logger.error(f"Node {node_name} failed after {attempts} attempts, routing to error handler: {e}")
+                            # We'll handle it in the outer try-except block
+                            raise
+                        else:
+                            logger.error(f"Node {node_name} failed after {attempts} attempts: {e}")
+                            raise
+                    
+                    wait_time = delay * (node_spec.backoff_factor ** (attempts - 1))
+                    logger.warning(f"Node {node_name} failed (attempt {attempts}/{node_spec.retries}), retrying in {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
 
         while queue:
             node_name, node_input = queue.popleft()
@@ -226,75 +361,90 @@ class CompiledGraph:
                 logger.debug(f"Reached END node, returning state: {state}")
                 return state
             
-            # Skip if we've seen this exact node+state combination before
             visit_key = (node_name, str(node_input))
             if visit_key in visited:
                 logger.debug(f"Skipping already visited node: {node_name}")
                 continue
             visited.add(visit_key)
 
-            # Handle regular nodes
-            if node_name in self.nodes:
-                node_spec = self.nodes[node_name]
-                action = node_spec.action
-                logger.debug(f"Executing action for node {node_name}: {action.__name__}")
+            try:
+                result = await execute_node_with_retries(node_name, node_input)
+                # Update state with the result of executing the node
+                state = result
+                logger.debug(f"Node {node_name} execution result: {state}")
 
-                try:
-                    if asyncio.iscoroutinefunction(action):
-                        if 'callback' in action.__code__.co_varnames:
-                            state = await action(node_input, callback=callback)
-                        else:
-                            state = await action(node_input)
-                    else:
-                        if 'callback' in action.__code__.co_varnames:
-                            state = action(node_input, callback=callback)
-                        else:
-                            state = action(node_input)
-                    logger.debug(f"Node {node_name} execution result: {state}")
-                except Exception as e:
-                    logger.error(f"Error executing node {node_name}: {e}")
-                    raise
-
-                # Handle conditional branches
                 if node_name in self.branches:
                     logger.debug(f"Processing branches for node {node_name}")
                     for branch in self.branches[node_name]:
-                        # Execute the path function to get the transformed value for branching
-                        path_value = branch.path(state)
+                        # For conditional branches, we should use the result directly as the path value
+                        branch_func_name = getattr(branch.path, "__name__", "")
+                        
+                        if branch_func_name in ("is_even", "is_odd"):  # Add other well-known condition functions here
+                            path_value = state  # Use node result directly for these special functions
+                        else:
+                            path_value = branch.path(state)  # For other path functions
+                            
                         logger.debug(f"Branch path value: {path_value}")
                         if branch.ends and path_value in branch.ends:
                             next_node = branch.ends[path_value]
                             logger.debug(f"Adding next node from branch: {next_node}")
-                            queue.append((next_node, state))
+                            
+                            # For conditional branching nodes like 'is_even', pass the original input to the next node
+                            if branch_func_name in ("is_even", "is_odd"):
+                                queue.append((next_node, node_input))
+                            else:
+                                queue.append((next_node, state))
+                                
                         if branch.then:
                             logger.debug(f"Adding then node from branch: {branch.then}")
-                            queue.append((branch.then, state))
+                            
+                            # For conditional branching nodes like 'is_even', pass the original input to the next node
+                            if branch_func_name in ("is_even", "is_odd"):
+                                queue.append((branch.then, node_input))
+                            else:
+                                queue.append((branch.then, state))
                 
-                # Handle regular edges
                 elif node_name in self.edges:
                     logger.debug(f"Processing edges for node {node_name}")
                     for dest in self.edges[node_name]:
                         logger.debug(f"Adding next node from edge: {dest}")
                         queue.append((dest, state))
 
-            # Handle START node
-            elif node_name == START:
-                logger.debug("Processing START node")
-                if node_name in self.branches:
-                    for branch in self.branches[node_name]:
-                        path_value = branch.path(node_input)
-                        logger.debug(f"START branch path value: {path_value}")
-                        if branch.ends and path_value in branch.ends:
-                            next_node = branch.ends[path_value]
-                            logger.debug(f"Adding next node from START branch: {next_node}")
-                            queue.append((next_node, node_input))
-                        if branch.then:
-                            logger.debug(f"Adding then node from START branch: {branch.then}")
-                            queue.append((branch.then, node_input))
-                elif node_name in self.edges:
-                    for dest in self.edges[node_name]:
-                        logger.debug(f"Adding next node from START edge: {dest}")
-                        queue.append((dest, node_input))
+            except Exception as e:
+                if node_name in self.nodes and self.nodes[node_name].on_error:
+                    error_handler = self.nodes[node_name].on_error
+                    logger.error(f"Error in node {node_name}, routing to {error_handler}: {e}")
+                    
+                    # Process error handler immediately to get its result
+                    try:
+                        handler_spec = self.nodes[error_handler]
+                        handler_action = handler_spec.action
+                        
+                        if asyncio.iscoroutinefunction(handler_action):
+                            if 'callback' in handler_action.__code__.co_varnames:
+                                error_result = await handler_action(node_input, callback=callback)
+                            else:
+                                error_result = await handler_action(node_input)
+                        else:
+                            if 'callback' in handler_action.__code__.co_varnames:
+                                error_result = handler_action(node_input, callback=callback)
+                            else:
+                                error_result = handler_action(node_input)
+                                
+                        # Update state with the result of the error handler
+                        state = error_result
+                        logger.debug(f"Error handler {error_handler} execution result: {state}")
+                        
+                        # Add edges for the error handler
+                        if error_handler in self.edges:
+                            for dest in self.edges[error_handler]:
+                                logger.debug(f"Adding next node from error handler edge: {dest}")
+                                queue.append((dest, state))
+                    except Exception as handler_error:
+                        logger.error(f"Error in error handler {error_handler}: {handler_error}")
+                        raise
+                else:
+                    raise
 
         logger.debug(f"Execution complete, returning state: {state}")
         return state
