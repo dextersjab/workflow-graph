@@ -42,25 +42,20 @@ from workflow_graph import WorkflowGraph
 
 # Define task functions
 def add(data, callback=None):
+    # The optional callback parameter can be used for streaming interim results,
+    # logging progress, or updating UI in real-time as the workflow executes
     result = data + 1
     if callback:
         callback(f"Added 1: {data} -> {result}")
     return result
 
-def is_even(data, callback=None):
-    result = data % 2 == 0
-    if callback:
-        callback(f"is_even: {data} -> {result}")
-    return result
+def is_even(data):
+    return data % 2 == 0
 
-def handle_even(data, callback=None):
-    if callback:
-        callback(f"Handling even number: {data}")
+def handle_even(data):
     return f"Even: {data}"
 
-def handle_odd(data, callback=None):
-    if callback:
-        callback(f"Handling odd number: {data}")
+def handle_odd(data):
     return f"Odd: {data}"
 
 # Create and configure the workflow graph
@@ -138,7 +133,10 @@ compiled_graph = graph.compile()
 
 async def run_workflow(input_data):
     # Execute with the compiled graph
-    result = await compiled_graph.execute_async(input_data, callback=print)
+    result = await compiled_graph.execute_async(
+        input_data, 
+        callback=lambda msg: print(f"Progress update: {msg}")
+    )
     print(f"Final Result: {result}")
 
 # Run the workflow with different inputs
