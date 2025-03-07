@@ -30,33 +30,17 @@ Or install directly using pip:
 pip install git+https://github.com/dextersjab/workflow-graph.git@main
 ```
 
-## Usage
+## Basic Usage
 
-There are two ways to use WorkflowGraph:
+### Implementing a Workflow
 
-### Direct Execution (Simple)
-
-```python
-import asyncio
-from workflow_graph import WorkflowGraph
-
-# Create and configure the workflow graph
-graph = WorkflowGraph()
-# ... configure nodes and edges ...
-
-# Execute directly (compiles internally)
-result = graph.execute(input_data)
-# or asynchronously
-result = await graph.execute_async(input_data, callback=some_callback)
-```
-
-### Compile-then-Execute (More Efficient for Multiple Executions)
+Here's how to create a simple workflow with conditional branching:
 
 ```python
 import asyncio
 from workflow_graph import WorkflowGraph
 
-# Define tasks
+# Define task functions
 def add(data, callback=None):
     result = data + 1
     if callback:
@@ -81,41 +65,40 @@ def handle_odd(data, callback=None):
 
 # Create and configure the workflow graph
 graph = WorkflowGraph()
+
+# Add nodes
 graph.add_node("addition", add)
 graph.add_node("is_even_check", is_even)
 graph.add_node("even_handler", handle_even)
 graph.add_node("odd_handler", handle_odd)
 
-# Define edges for the main workflow
+# Define starting point
 graph.set_entry_point("addition")
+
+# Define flow between nodes
 graph.add_edge("addition", "is_even_check")
 
-# Add conditional edges based on the result of is_even_check
+# Add conditional branching based on is_even_check result
 graph.add_conditional_edges(
     "is_even_check", 
     path=is_even, 
     path_map={True: "even_handler", False: "odd_handler"}
 )
 
-# Set finish points
+# Set endpoints
 graph.set_finish_point("even_handler")
 graph.set_finish_point("odd_handler")
-
-# Compile once
-compiled_graph = graph.compile()
-
-async def run_workflow(input_data):
-    # Execute multiple times with the same compiled graph
-    result = await compiled_graph.execute_async(input_data, callback=print)
-    print(f"Final Result: {result}")
-
-# Run the workflow
-asyncio.run(run_workflow(5))
 ```
+
+This example creates a workflow that:
+1. Takes a number as input
+2. Adds 1 to it
+3. Checks if the result is even
+4. Branches to different handlers based on the result
 
 ![](graph.png)
 
-## Error Handling and Retries
+### Error Handling and Retries
 
 WorkflowGraph supports built-in error handling and retry capabilities:
 
@@ -127,6 +110,40 @@ graph.add_node(
     backoff_factor=0.5,          # Wait 0.5 seconds × attempt before retrying
     on_error=handle_api_error    # Call this function if all retries fail
 )
+```
+
+## Execution Methods
+
+Once your workflow is defined, there are two ways to execute it:
+
+### Direct Execution (Simple)
+
+For one-time executions, use the direct execution approach:
+
+```python
+# Execute synchronously
+result = graph.execute(input_data)
+
+# Or execute asynchronously with a callback
+result = await graph.execute_async(input_data, callback=some_callback)
+```
+
+### Compile-then-Execute (More Efficient for Multiple Executions)
+
+For workflows that will be executed multiple times, compile once and reuse:
+
+```python
+# Compile the graph
+compiled_graph = graph.compile()
+
+async def run_workflow(input_data):
+    # Execute with the compiled graph
+    result = await compiled_graph.execute_async(input_data, callback=print)
+    print(f"Final Result: {result}")
+
+# Run the workflow with different inputs
+asyncio.run(run_workflow(5))
+asyncio.run(run_workflow(10))
 ```
 
 ## Package Structure
