@@ -363,11 +363,17 @@ class WorkflowGraph:
         return compiled
 
     def execute(self, data: Any) -> Any:
-        """Execute the workflow graph synchronously."""
-        compiled = self.compile()
-        return compiled.execute(data)
+        """Execute the workflow graph with the given input."""
+        return self.compile().execute(data)
 
     async def execute_async(self, data: Any) -> Any:
-        """Execute the workflow graph asynchronously."""
-        compiled = self.compile()
-        return await compiled.execute_async(data) 
+        """Execute the workflow graph asynchronously with the given input."""
+        return await self.compile().execute_async(data)
+
+    def to_mermaid(self) -> str:
+        """Generate a Mermaid diagram representation of the workflow graph.
+        
+        Returns:
+            A string containing the Mermaid diagram code.
+        """
+        return self.compile().to_mermaid() 

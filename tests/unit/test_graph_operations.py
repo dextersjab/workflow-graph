@@ -91,21 +91,90 @@ def test_type_validation(graph):
         graph.add_edge("str_node", "int_node")
         graph.validate()
 
-def test_type_validation_with_branches(graph):
-    """Test type validation in conditional branches."""
-    def num_to_str(x: int) -> str:
+def test_type_validation_with_branches():
+    # This test is similar to the previous one, but uses conditional branches
+    graph = WorkflowGraph()
+    
+    def add1(x: int) -> int:
+        return x + 1
+    
+    def is_even(x: int) -> bool:
+        return x % 2 == 0
+    
+    def to_str(x: int) -> str:
         return str(x)
     
-    def str_append(x: str) -> str:
-        return x + "a"
+    def to_float(x: int) -> float:
+        return float(x)
     
-    def str_to_int(x: str) -> int:
-        return int(x)
+    graph.add_node("add1", add1)
+    graph.add_node("is_even", is_even)
+    graph.add_node("to_str", to_str)
+    graph.add_node("to_float", to_float)
+    
+    graph.set_entry_point("add1")
+    graph.add_edge("add1", "is_even")
+    
+    graph.add_conditional_edges(
+        "is_even",
+        path=is_even,
+        path_map={True: "to_str", False: "to_float"}
+    )
+    
+    graph.validate()  # Should not raise an exception
 
-    graph.add_node("num_to_str", num_to_str)
-    graph.add_node("str_append", str_append)
-    graph.add_node("str_to_int", str_to_int)
-
-    # These should work as types are compatible
-    graph.add_edge("num_to_str", "str_append")
-    graph.add_edge("str_append", "str_to_int") 
+def test_mermaid_diagram_generation():
+    # Create a simple graph
+    graph = WorkflowGraph()
+    
+    def add(x):
+        return x + 1
+    
+    def is_even(x):
+        return x % 2 == 0
+    
+    def handle_even(x):
+        return f"Even: {x}"
+    
+    def handle_odd(x):
+        return f"Odd: {x}"
+    
+    graph.add_node("add", add)
+    graph.add_node("is_even", is_even)
+    graph.add_node("handle_even", handle_even)
+    graph.add_node("handle_odd", handle_odd)
+    
+    graph.set_entry_point("add")
+    graph.add_edge("add", "is_even")
+    
+    graph.add_conditional_edges(
+        "is_even",
+        path=is_even,
+        path_map={True: "handle_even", False: "handle_odd"}
+    )
+    
+    graph.set_finish_point("handle_even")
+    graph.set_finish_point("handle_odd")
+    
+    # Generate Mermaid diagram
+    mermaid = graph.to_mermaid()
+    
+    # Basic assertions to ensure the diagram contains expected elements
+    assert "```mermaid" in mermaid
+    assert "flowchart TD" in mermaid
+    assert '__start__["START"]' in mermaid
+    assert '__end__["END"]' in mermaid
+    assert 'add["add"]' in mermaid
+    assert 'is_even["is_even"]' in mermaid
+    assert 'handle_even["handle_even"]' in mermaid
+    assert 'handle_odd["handle_odd"]' in mermaid
+    
+    # Check for regular edges
+    assert "__start__ --> add" in mermaid
+    assert "add --> is_even" in mermaid
+    assert "handle_even --> __end__" in mermaid
+    assert "handle_odd --> __end__" in mermaid
+    
+    # Check for conditional edges (dashed lines)
+    assert "is_even -.|True|.-> handle_even" in mermaid
+    assert "is_even -.|False|.-> handle_odd" in mermaid 

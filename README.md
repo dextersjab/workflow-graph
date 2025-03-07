@@ -91,7 +91,21 @@ This example creates a workflow that:
 3. Checks if the result is even
 4. Branches to different handlers based on the result
 
-![](graph.png)
+```mermaid
+flowchart TD
+    __start__["START"]
+    __end__["END"]
+    addition["addition"]
+    is_even_check["is_even_check"]
+    even_handler["even_handler"]
+    odd_handler["odd_handler"]
+    __start__ --> addition
+    addition --> is_even_check
+    is_even_check -.|True|.-> even_handler
+    is_even_check -.|False|.-> odd_handler
+    even_handler --> __end__
+    odd_handler --> __end__
+```
 
 ### Error Handling and Retries
 
@@ -143,6 +157,24 @@ async def run_workflow(input_data):
 asyncio.run(run_workflow(5))
 asyncio.run(run_workflow(10))
 ```
+
+## Generating Mermaid Diagrams
+
+WorkflowGraph includes built-in support for generating [Mermaid.js](https://mermaid.js.org/) diagrams to visualize your workflow:
+
+```python
+# Generate Mermaid diagram code
+mermaid_code = graph.to_mermaid()
+print(mermaid_code)
+```
+
+The generated diagram uses dashed lines (`-.->`), rather than decision nodes, to represent conditional branches. This provides a cleaner and more accurate representation of how the workflow behaves.
+
+Mermaid diagrams can be rendered in:
+- GitHub Markdown (just paste the code)
+- VS Code (with the Mermaid extension)
+- Web browsers (using the Mermaid Live Editor)
+- Many other tools that support Mermaid
 
 ## Package Structure
 

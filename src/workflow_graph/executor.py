@@ -27,6 +27,46 @@ class CompiledGraph:
         self.branches = branches  # Keep the original branch dictionary structure
         self.compiled = False
 
+    def to_mermaid(self) -> str:
+        """Generate a Mermaid diagram representation of the workflow graph.
+        
+        Returns:
+            A string containing the Mermaid diagram code.
+        """
+        mermaid_code = ["```mermaid", "flowchart TD"]
+        
+        # Define node styles
+        mermaid_code.append(f"    {START}[\"START\"]")
+        mermaid_code.append(f"    {END}[\"END\"]")
+        
+        # Add custom nodes
+        for node_name in self.nodes:
+            mermaid_code.append(f"    {node_name}[\"{node_name}\"]")
+        
+        # Add direct edges
+        for start, ends in self.edges.items():
+            for end in ends:
+                mermaid_code.append(f"    {start} --> {end}")
+        
+        # Add conditional edges with dashed lines
+        for source, branch_dict in self.branches.items():
+            for branch_id, branch in branch_dict.items():
+                # Handle the 'then' case
+                if branch.then:
+                    # Use dashed lines for conditional edges
+                    mermaid_code.append(f"    {source} -.-> {branch.then}")
+                
+                # Handle the conditional paths in 'ends'
+                if branch.ends:
+                    for condition, target in branch.ends.items():
+                        # Add label to the edge showing the condition
+                        label = f"|{condition}|"
+                        # Use dashed lines for conditional edges
+                        mermaid_code.append(f"    {source} -.{label}.-> {target}")
+        
+        mermaid_code.append("```")
+        return "\n".join(mermaid_code)
+
     def validate(self) -> "CompiledGraph":
         """Validate the compiled graph.
         

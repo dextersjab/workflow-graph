@@ -51,9 +51,13 @@ graph.set_finish_point("odd_handler")
 # Compile the graph
 compiled_graph = graph.compile()
 
+# Generate and print Mermaid diagram
+print("\nMermaid Diagram Representation:")
+print(graph.to_mermaid())
+
 # Execute the workflow
 async def run_workflow(input_data):
-    result = await compiled_graph.execute(input_data, callback=print)
+    result = await compiled_graph.execute_async(input_data, callback=print)
     print(f"Final Result: {result}")
 
 # Run with an example input
