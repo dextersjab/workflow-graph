@@ -8,10 +8,9 @@
 - **Synchronous & asynchronous support**: Define both sync and async nodes without any external dependencies.
 - **Real-time streaming**: Built-in support for callbacks in each node, allowing real-time token streaming (e.g., for WebSockets).
 - **LangGraph alternative**: Unlike LangGraph, WorkflowGraph provides a simpler, fully self-contained solution without needing LangChain for streaming.
+- **Modular architecture**: Organized into separate modules for better maintainability and extensibility.
 
 ## Installation
-
-Either copy the code directly from `workflow_graph.py` or install as a dependency using `pip`.
 
 To install **WorkflowGraph** as a dependency, add the following line to your `requirements.txt`:
 
@@ -25,11 +24,37 @@ Then, run:
 pip install -r requirements.txt
 ```
 
+Or install directly using pip:
+
+```shell
+pip install git+https://github.com/dextersjab/workflow-graph.git@main
+```
+
 ## Usage
+
+There are two ways to use WorkflowGraph:
+
+### Direct Execution (Simple)
 
 ```python
 import asyncio
-from graph import WorkflowGraph
+from workflow_graph import WorkflowGraph
+
+# Create and configure the workflow graph
+graph = WorkflowGraph()
+# ... configure nodes and edges ...
+
+# Execute directly (compiles internally)
+result = graph.execute(input_data)
+# or asynchronously
+result = await graph.execute_async(input_data, callback=some_callback)
+```
+
+### Compile-then-Execute (More Efficient for Multiple Executions)
+
+```python
+import asyncio
+from workflow_graph import WorkflowGraph
 
 # Define tasks
 def add(data, callback=None):
@@ -76,11 +101,12 @@ graph.add_conditional_edges(
 graph.set_finish_point("even_handler")
 graph.set_finish_point("odd_handler")
 
-# Execute with streaming
+# Compile once
 compiled_graph = graph.compile()
 
 async def run_workflow(input_data):
-    result = await compiled_graph.execute(input_data, callback=print)
+    # Execute multiple times with the same compiled graph
+    result = await compiled_graph.execute_async(input_data, callback=print)
     print(f"Final Result: {result}")
 
 # Run the workflow
@@ -89,8 +115,29 @@ asyncio.run(run_workflow(5))
 
 ![](graph.png)
 
----
+## Error Handling and Retries
 
-**Note**: This project was largely generated using AI assistance.
+WorkflowGraph supports built-in error handling and retry capabilities:
 
---- 
+```python
+graph.add_node(
+    "api_call", 
+    make_api_request, 
+    retries=3,                   # Retry up to 3 times on failure
+    backoff_factor=0.5,          # Wait 0.5 seconds × attempt before retrying
+    on_error=handle_api_error    # Call this function if all retries fail
+)
+```
+
+## Package Structure
+
+The library is organized into the following modules:
+
+- **workflow_graph**: Main package
+  - **constants.py**: Defines constants like START and END
+  - **models.py**: Defines data structures like NodeSpec and Branch
+  - **builder.py**: Contains the WorkflowGraph class for building graphs
+  - **executor.py**: Contains the CompiledGraph class for executing workflows
+  - **exceptions.py**: Contains custom exceptions for better error handling
+
+For backward compatibility, a top-level `workflow_graph.py` file is also provided that re-exports all the public API.
