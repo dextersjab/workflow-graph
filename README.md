@@ -186,5 +186,8 @@ The library is organized into the following modules:
   - **builder.py**: Contains the WorkflowGraph class for building graphs
   - **executor.py**: Contains the CompiledGraph class for executing workflows
   - **exceptions.py**: Contains custom exceptions for better error handling
+  - **README.md**: Contains detailed documentation about the package internals
 
 For backward compatibility, a top-level `workflow_graph.py` file is also provided that re-exports all the public API.
+
+> **Note**: For more technical details about the package internals, refer to the [src/workflow_graph/README.md](src/workflow_graph/README.md) file.
