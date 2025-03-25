@@ -2,6 +2,8 @@
 
 **WorkflowGraph** is a lightweight, self-contained Python library for building and executing directed graph workflows. It's an alternative to **LangGraph** for those seeking independence from LangChain and the flexibility to implement agent workflows, while still enabling real-time streaming of results.
 
+The JavaScript-version is available at [https://github.com/dextersjab/workflow-graph.js]().
+
 ## Features
 
 - **Graph-based workflows**: Build flexible, directed workflows where nodes are customizable tasks.
@@ -181,13 +183,15 @@ Mermaid diagrams can be rendered in:
 The library is organized into the following modules:
 
 - **workflow_graph**: Main package
-  - **constants.py**: Defines constants like START and END
-  - **models.py**: Defines data structures like NodeSpec and Branch
-  - **builder.py**: Contains the WorkflowGraph class for building graphs
-  - **executor.py**: Contains the CompiledGraph class for executing workflows
-  - **exceptions.py**: Contains custom exceptions for better error handling
-  - **README.md**: Contains detailed documentation about the package internals
+- **constants.py**: Defines constants like START and END
+- **models.py**: Defines data structures like NodeSpec and Branch
+- **builder.py**: Contains the WorkflowGraph class for building graphs
+- **executor.py**: Contains the CompiledGraph class for executing workflows
+- **exceptions.py**: Contains custom exceptions for better error handling
+- **README.md**: Contains detailed documentation about the package internals
 
 For backward compatibility, a top-level `workflow_graph.py` file is also provided that re-exports all the public API.
 
-> **Note**: For more technical details about the package internals, refer to the [src/workflow_graph/README.md](src/workflow_graph/README.md) file.
+> **Note**:
+> - For more technical details about the package internals, refer to the [src/workflow_graph/README.md](src/workflow_graph/README.md) file.
+> - This project is largely AI-generated
