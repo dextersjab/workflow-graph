@@ -14,7 +14,15 @@ The JavaScript-version is available at [https://github.com/dextersjab/workflow-g
 
 ## Installation
 
-To install **WorkflowGraph** as a dependency, add the following line to your `requirements.txt`:
+### From PyPI (Recommended)
+
+```shell
+pip install workflow-graph
+```
+
+### From GitHub
+
+Add the following line to your `requirements.txt`:
 
 ```
 git+https://github.com/dextersjab/workflow-graph.git@main
