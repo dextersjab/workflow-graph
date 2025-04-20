@@ -142,13 +142,27 @@ class CompiledGraph:
                 if attempts > node_spec.retry_count:
                     if node_spec.error_handler:
                         logger.error(f"Node {node_name} failed after {attempts} attempts, calling error handler: {e}")
-                        return node_spec.error_handler(e)
+                        # Handle potential async error handler
+                        eh_result = node_spec.error_handler(e)
+                        if asyncio.iscoroutine(eh_result):
+                            # Await the coroutine result if the handler is async
+                            logger.debug(f"Awaiting async error handler for node {node_name}")
+                            return await eh_result
+                        else:
+                            # Return the result directly if the handler is sync
+                            logger.debug(f"Returning result from sync error handler for node {node_name}")
+                            return eh_result
                     else:
-                        logger.error(f"Node {node_name} failed after {attempts} attempts: {e}")
-                        raise
+                        logger.error(f"Node {node_name} failed after {attempts} attempts with no error handler: {e}")
+                        raise # Re-raise the exception if no handler or retries exhausted
                 
+                # Calculate exponential backoff if retry_delay is set, otherwise use fixed delay
                 wait_time = node_spec.retry_delay
-                logger.warning(f"Node {node_name} failed (attempt {attempts}/{node_spec.retry_count}), retrying in {wait_time}s: {e}")
+                if node_spec.backoff_factor and node_spec.backoff_factor > 0:
+                     # Simple exponential backoff: delay * factor^(attempt-1)
+                     wait_time = node_spec.retry_delay * (node_spec.backoff_factor ** (attempts - 1))
+
+                logger.warning(f"Node {node_name} failed (attempt {attempts}/{node_spec.retry_count+1}), retrying in {wait_time:.2f}s: {e}")
                 await asyncio.sleep(wait_time)
 
     async def execute_async(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
@@ -204,10 +218,26 @@ class CompiledGraph:
     def execute(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
         """Execute the workflow graph synchronously."""
         try:
-            # Check if we're already in an event loop
             loop = asyncio.get_running_loop()
-            # If we are, create a new task in the current loop
-            return loop.run_until_complete(self.execute_async(input_data, callback))
-        except RuntimeError:
-            # If we're not in an event loop, create a new one
-            return asyncio.run(self.execute_async(input_data, callback)) 
+        except RuntimeError as e:
+            # Check if the RuntimeError is specifically "no running event loop"
+            if "no running event loop" in str(e).lower():
+                # This is expected if called from a sync context without a loop.
+                logger.debug("No running event loop found, creating new one with asyncio.run().")
+                return asyncio.run(self.execute_async(input_data, callback))
+            else:
+                # Unexpected error during loop detection
+                logger.error(f"Unexpected RuntimeError during event loop detection: {e}")
+                raise e
+        else:
+            # A loop was found. Check if it's running.
+            if loop.is_running():
+                # Cannot block in a running loop using the synchronous execute method.
+                raise RuntimeError(
+                    "Synchronous execute() called from within an existing running event loop. "
+                    "Use execute_async() instead or run execute() from a synchronous context."
+                )
+            else:
+                # Loop exists but is not running. Use run_until_complete.
+                logger.debug("Existing event loop found but not running, using loop.run_until_complete().")
+                return loop.run_until_complete(self.execute_async(input_data, callback)) 

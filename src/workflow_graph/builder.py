@@ -12,6 +12,7 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+from collections import deque
 
 from .constants import START, END
 from .models import Branch, NodeSpec
@@ -53,7 +54,8 @@ class WorkflowGraph:
         *,
         metadata: dict[str, Any] | None = None,
         retries: int = 0,
-        backoff_factor: float = 0.1,
+        retry_delay: float = 0.5,
+        backoff_factor: float | None = None,
         on_error: Callable[[Exception], Any] | None = None,
         callback: Callable[[], None] | None = None,
     ) -> None:
@@ -64,7 +66,8 @@ class WorkflowGraph:
             action: The function to execute at this node (required if node is a string)
             metadata: Optional metadata for the node
             retries: Number of retry attempts if the node action fails
-            backoff_factor: Delay between retry attempts
+            retry_delay: Delay between retry attempts in seconds
+            backoff_factor: Optional multiplier for exponential backoff (e.g., 2 for doubling)
             on_error: Optional error handler function
             callback: Optional callback function to execute after the node action
             
@@ -90,12 +93,14 @@ class WorkflowGraph:
                 raise DuplicateNodeError(f"Node `{node}` already present.")
             input_type, output_type = extract_type_hints(action)
             self.nodes[node] = NodeSpec(
+                name=node,
                 action=action,
                 metadata=metadata,
                 input_type=input_type,
                 output_type=output_type,
                 retry_count=retries,
-                retry_delay=backoff_factor,
+                retry_delay=retry_delay,
+                backoff_factor=backoff_factor,
                 error_handler=on_error,
                 callback=callback,
             )
@@ -110,12 +115,14 @@ class WorkflowGraph:
                 raise InvalidNodeNameError(f"Node `{node_name}` is reserved.")
             input_type, output_type = extract_type_hints(action)
             self.nodes[node_name] = NodeSpec(
+                name=node_name,
                 action=node,
                 metadata=metadata,
                 input_type=input_type,
                 output_type=output_type,
                 retry_count=retries,
-                retry_delay=backoff_factor,
+                retry_delay=retry_delay,
+                backoff_factor=backoff_factor,
                 error_handler=on_error,
                 callback=callback,
             )
@@ -309,51 +316,59 @@ class WorkflowGraph:
 
         # Check for unreachable nodes
         if len(self.nodes) > 0:
-            # Build a graph of all reachable nodes
             visited = set()
-            queue = []
+            queue = deque()
 
-            # Add entry points to the queue
-            for dst in entry_edges:
-                if dst != END:
-                    queue.append(dst)
+            # Add entry points from direct edges (START -> node)
+            for src, dst in self.edges:
+                if src == START and dst != END:
+                    if dst not in queue:
+                        queue.append(dst)
 
-            # Add entry points from conditional branches
+            # Add entry points from conditional branches starting at START
             if START in self.branches:
-                for branch in self.branches[START].values():
+                for branch_id, branch in self.branches[START].items():
                     if branch.then and branch.then != END:
-                        queue.append(branch.then)
+                        if branch.then not in queue:
+                             queue.append(branch.then)
                     if branch.ends:
-                        for dest in branch.ends.values():
+                        for path_val, dest in branch.ends.items():
                             if dest != END:
-                                queue.append(dest)
+                                if dest not in queue:
+                                     queue.append(dest)
             
+            visited.add(START)
+
             while queue:
-                node = queue.pop(0)
+                node = queue.popleft()
                 if node in visited:
                     continue
-                    
+                
                 visited.add(node)
-                
-                # Add all nodes reachable from outgoing edges
-                for src, target in self._all_edges:
-                    if src == node and target != END:
-                        queue.append(target)
-                
-                # Add all nodes reachable from branches
+
+                # Add nodes reachable from direct edges
+                for start_node, end_node in self.edges:
+                    if start_node == node and end_node != END:
+                        if end_node not in visited:
+                            queue.append(end_node)
+
+                # Add nodes reachable from conditional branches
                 if node in self.branches:
-                    for branch in self.branches[node].values():
+                    for branch_id, branch in self.branches[node].items():
                         if branch.then and branch.then != END:
-                            queue.append(branch.then)
+                            if branch.then not in visited:
+                                queue.append(branch.then)
                         if branch.ends:
-                            for dest in branch.ends.values():
+                            for path_val, dest in branch.ends.items():
                                 if dest != END:
-                                    queue.append(dest)
-            
-            # Check for any nodes that weren't visited
-            unreachable = set(self.nodes.keys()) - visited
+                                    if dest not in visited:
+                                        queue.append(dest)
+
+            all_defined_nodes = set(self.nodes.keys())
+            reachable_nodes = visited - {START, END}
+            unreachable = all_defined_nodes - reachable_nodes
             if unreachable:
-                raise ValueError(f"Unreachable nodes detected: {', '.join(unreachable)}")
+                raise ValueError(f"Unreachable nodes detected: {', '.join(sorted(list(unreachable)))}")
             
         compiled = CompiledGraph(
             nodes=self.nodes,
