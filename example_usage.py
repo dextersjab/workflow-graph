@@ -1,5 +1,5 @@
 import asyncio
-from workflow_graph import WorkflowGraph
+from workflow_graph import WorkflowGraph, START, END
 
 # Define basic nodes
 def add(data, callback=None):
@@ -34,7 +34,7 @@ graph.add_node("even_handler", handle_even)
 graph.add_node("odd_handler", handle_odd)
 
 # Define edges for the main workflow
-graph.set_entry_point("addition")
+graph.add_edge(START, "addition")
 graph.add_edge("addition", "is_even_check")
 
 # Define conditional edges based on whether the number is even or odd
@@ -45,8 +45,8 @@ graph.add_conditional_edges(
 )
 
 # Set finish points
-graph.set_finish_point("even_handler")
-graph.set_finish_point("odd_handler")
+graph.add_edge("even_handler", END)
+graph.add_edge("odd_handler", END)
 
 # Compile the graph
 compiled_graph = graph.compile()

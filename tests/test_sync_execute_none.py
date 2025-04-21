@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from src.workflow_graph import WorkflowGraph
+from src.workflow_graph import WorkflowGraph, START, END
 
 # Define an async node that explicitly returns None
 async def async_node_returns_none(data):
@@ -34,9 +34,9 @@ def test_sync_execute_with_async_node_returning_none():
     graph = WorkflowGraph()
     graph.add_node("start_node", async_node_returns_none)
     graph.add_node("end_node", final_node)
-    graph.set_entry_point("start_node")
+    graph.add_edge(START, "start_node")
     graph.add_edge("start_node", "end_node")
-    graph.set_finish_point("end_node")
+    graph.add_edge("end_node", END)
 
     print("\nTesting synchronous execute with async node returning None...")
     # Execute synchronously
@@ -63,11 +63,10 @@ def test_sync_execute_with_failing_async_node_and_async_none_handler():
     )
     graph.add_node("next_node", final_node) # This node might be skipped if handler returns None
 
-    graph.set_entry_point("failing_node")
+    graph.add_edge(START, "failing_node")
     # If error handler returns a value, it goes to the next node
     graph.add_edge("failing_node", "next_node")
-    # Assuming the result of the error handler should end the graph path
-    graph.set_finish_point("next_node")
+    graph.add_edge("next_node", END)
 
     print("\nTesting synchronous execute with failing node and async handler returning None...")
     initial_data = "test_error_input"

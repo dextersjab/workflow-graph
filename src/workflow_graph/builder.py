@@ -203,20 +203,6 @@ class WorkflowGraph:
             )
         self.branches[source][name] = Branch(path, path_map, then)
 
-    def set_conditional_entry_point(
-        self,
-        path: Callable[[Any], Hashable | list[Hashable]],
-        path_map: dict[Hashable, str] | list[str] | None = None,
-        then: str | None = None,
-    ) -> None:
-        """Set a conditional entry point for the workflow.
-        
-        Args:
-            path: Function that determines the entry path
-            path_map: Mapping of path values to entry node names
-            then: Optional default entry node
-        """
-        return self.add_conditional_edges(START, path, path_map, then)
 
     def validate(self, interrupt: Sequence[str] | None = None) -> None:
         """Validate the workflow graph.

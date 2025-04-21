@@ -29,10 +29,13 @@ This package provides a lightweight framework for building and executing directe
 ## Basic usage
 
 ```python
-from workflow_graph import WorkflowGraph
+from workflow_graph import WorkflowGraph, START, END
 
 # Create a workflow graph
 graph = WorkflowGraph()
+
+# Set entry point
+graph.add_edge(START, "add_one")
 
 # Add nodes (functions)
 graph.add_node("add_one", lambda x: x + 1)
@@ -41,9 +44,8 @@ graph.add_node("multiply_by_two", lambda x: x * 2)
 # Add edges between nodes
 graph.add_edge("add_one", "multiply_by_two")
 
-# Set entry and exit points
-graph.set_entry_point("add_one")
-graph.set_finish_point("multiply_by_two")
+# Set exit point
+graph.add_edge("multiply_by_two", END)
 
 # Execute the workflow
 result = graph.execute(5)  # Result: (5 + 1) * 2 = 12
@@ -66,4 +68,4 @@ graph.add_conditional_edges(
 )
 ```
 
-See the project's root README.md for more detailed examples and usage instructions. 
+See the project's [root README.md](../../README.md) for more detailed examples and usage instructions.

@@ -1,7 +1,7 @@
 """Unit tests for workflow graph error handling and retry functionality."""
 import pytest
 import asyncio
-from workflow_graph import WorkflowGraph
+from workflow_graph import WorkflowGraph, START, END
 from workflow_graph.exceptions import ExecutionError
 
 def test_retry_policy(graph):
@@ -16,7 +16,8 @@ def test_retry_policy(graph):
         return x + 1
 
     graph.add_node("retry_node", failing_node, retries=3, backoff_factor=0.1)
-    graph.set_entry_point("retry_node")
+    graph.add_edge(START, "retry_node")
+    graph.add_edge("retry_node", END)
     result = graph.execute(1)
 
     assert attempts == 3  # Should have attempted 3 times
@@ -33,7 +34,8 @@ def test_error_handler(graph):
         return -1  # Return error value
 
     graph.add_node("fail_node", failing_node, on_error=error_handler)
-    graph.set_entry_point("fail_node")
+    graph.add_edge(START, "fail_node")
+    graph.add_edge("fail_node", END)
     result = graph.execute(1)
 
     assert result == -1  # Should return error handler result
@@ -59,7 +61,8 @@ def test_retry_then_error_handler(graph):
         backoff_factor=0.1,
         on_error=error_handler
     )
-    graph.set_entry_point("retry_fail_node")
+    graph.add_edge(START, "retry_fail_node")
+    graph.add_edge("retry_fail_node", END)
     result = graph.execute(1)
     assert attempts == 3  # Should have attempted 3 times (initial + 2 retries)
     assert result == -1  # Should return error handler result
@@ -78,7 +81,8 @@ async def test_async_retry(graph):
         return x + 1
 
     graph.add_node("async_retry_node", async_failing_node, retries=3, backoff_factor=0.1)
-    graph.set_entry_point("async_retry_node")
+    graph.add_edge(START, "async_retry_node")
+    graph.add_edge("async_retry_node", END)
     result = await graph.execute_async(1)
 
     assert attempts == 3

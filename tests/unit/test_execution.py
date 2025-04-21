@@ -1,7 +1,7 @@
 """Unit tests for workflow graph execution."""
 import pytest
 import asyncio
-from workflow_graph import WorkflowGraph
+from workflow_graph import WorkflowGraph, START, END
 
 def test_simple_workflow_execution(graph):
     """Test execution of a simple linear workflow."""
@@ -13,9 +13,9 @@ def test_simple_workflow_execution(graph):
 
     graph.add_node("add", add_one)
     graph.add_node("multiply", multiply_by_two)
+    graph.add_edge(START, "add")
     graph.add_edge("add", "multiply")
-    graph.set_entry_point("add")
-    graph.set_finish_point("multiply")
+    graph.add_edge("multiply", END)
 
     result = graph.execute(1)
     assert result == 4  # (1 + 1) * 2 = 4
@@ -35,12 +35,14 @@ def test_conditional_workflow_execution(graph):
     graph.add_node("add", add_one)
     graph.add_node("multiply", multiply_by_two)
 
+    graph.add_edge(START, "check")
     graph.add_conditional_edges(
         "check",
         is_even,
         {True: "add", False: "multiply"}
     )
-    graph.set_entry_point("check")
+    graph.add_edge("add", END)
+    graph.add_edge("multiply", END)
 
     # Test with even number
     result = graph.execute(2)
@@ -58,7 +60,8 @@ async def test_async_node_execution(graph):
         return x + 1
 
     graph.add_node("async_add", async_add_one)
-    graph.set_entry_point("async_add")
+    graph.add_edge(START, "async_add")
+    graph.add_edge("async_add", END)
     result = await graph.execute_async(1)
     assert result == 2
 
@@ -118,10 +121,10 @@ def test_callback_execution(graph):
     graph.add_node("analyze", analyze_result, callback=analyze_callback)
     graph.add_node("format", format_output, callback=format_callback)
     
+    graph.add_edge(START, "process")
     graph.add_edge("process", "analyze")
     graph.add_edge("analyze", "format")
-    graph.set_entry_point("process")
-    graph.set_finish_point("format")
+    graph.add_edge("format", END)
     
     # Execute the workflow
     final_result = graph.execute(5)
