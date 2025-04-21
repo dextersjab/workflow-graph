@@ -137,6 +137,7 @@ class WorkflowGraph:
             
         Raises:
             ValueError: If using reserved nodes incorrectly
+            TypeMismatchError: If the output type of the source node doesn't match the input type of the destination node
         """
         if self.compiled:
             logger.warning(
@@ -151,6 +152,22 @@ class WorkflowGraph:
             raise InvalidEdgeError(f"Start node '{start_key}' does not exist")
         if end_key not in self.nodes and end_key != END:
             raise InvalidEdgeError(f"End node '{end_key}' does not exist")
+
+        # Skip type validation for START and END nodes
+        if start_key != START and end_key != END:
+            # Get type hints for both nodes
+            start_node = self.nodes[start_key]
+            end_node = self.nodes[end_key]
+            
+            # If either node has no type hints, skip validation
+            if start_node.output_type is not None and end_node.input_type is not None:
+                # Check if the output type of the source node is compatible with the input type of the destination node
+                if not issubclass(start_node.output_type, end_node.input_type):
+                    raise TypeMismatchError(
+                        f"Type mismatch between nodes '{start_key}' and '{end_key}': "
+                        f"'{start_key}' outputs {start_node.output_type.__name__} but "
+                        f"'{end_key}' expects {end_node.input_type.__name__}"
+                    )
 
         if condition is not None:
             self.add_conditional_edges(
@@ -204,69 +221,99 @@ class WorkflowGraph:
         self.branches[source][name] = Branch(path, path_map, then)
 
 
-    def validate(self, interrupt: Sequence[str] | None = None) -> None:
-        """Validate the workflow graph.
-        
-        Args:
-            interrupt: Optional sequence of node names that can interrupt the flow
+    def validate(self) -> None:
+        """Validate the graph structure."""
+        # Check for at least one entry point
+        has_entry_edge = any(src == START for src, _ in self.edges)
+        has_conditional_entry = START in self.branches
+        if not has_entry_edge and not has_conditional_entry:
+            raise ValueError(
+                f"Graph must have at least one entry point defined by adding an edge from '{START}' or a conditional edge from '{START}'"
+            )
+
+        # Check for at least one finish point
+        has_finish_edge = any(dst == END for _, dst in self.edges)
+        has_conditional_finish = any(
+            (branch.then == END or (branch.ends and END in branch.ends.values()))
+            for branches in self.branches.values()
+            for branch in branches.values()
+        )
+        if not has_finish_edge and not has_conditional_finish:
+            raise ValueError(
+                f"Graph must have at least one finish point defined by adding an edge to '{END}' or a conditional edge to '{END}'"
+            )
+
+        # Check for unreachable nodes
+        if len(self.nodes) > 0:
+            # Build a graph of all reachable nodes
+            visited = set()
+            queue = [START]
             
-        Raises:
-            ValueError: If validation fails
-        """
-        all_sources = {src for src, _ in self._all_edges}
-        for start, branches in self.branches.items():
-            all_sources.add(start)
-            for cond, branch in branches.items():
-                if branch.then is not None:
-                    if branch.ends is not None:
-                        for end in branch.ends.values():
-                            if end != END:
-                                all_sources.add(end)
-                    else:
-                        for node in self.nodes:
-                            if node != start and node != branch.then:
-                                all_sources.add(node)
-        for source in all_sources:
-            if source not in self.nodes and source != START:
-                raise InvalidEdgeError(f"Found edge starting at unknown node '{source}'")
+            while queue:
+                node = queue.pop(0)
+                if node in visited:
+                    continue
+                
+                visited.add(node)
+                
+                # Add all nodes reachable from outgoing edges
+                for src, dest in self.edges:
+                    if src == node and dest != END:
+                        queue.append(dest)
+                
+                # Add all nodes reachable from branches
+                if node in self.branches:
+                    for branch in self.branches[node].values():
+                        if branch.then and branch.then != END:
+                            queue.append(branch.then)
+                        if branch.ends:
+                            for dest in branch.ends.values():
+                                if dest != END:
+                                    queue.append(dest)
+            
+            # Check for any nodes that weren't visited
+            unreachable = set(self.nodes.keys()) - visited
+            if unreachable:
+                raise ValueError(f"Unreachable nodes detected: {', '.join(unreachable)}")
 
-        # Validate type compatibility between connected nodes
-        def validate_type_compatibility(source: str, target: str) -> None:
-            if source == START or target == END:
-                return
-            source_node = self.nodes[source]
-            target_node = self.nodes[target]
-            if (source_node.output_type is not None and 
-                target_node.input_type is not None and 
-                not issubclass(source_node.output_type, target_node.input_type)):
-                raise TypeMismatchError(
-                    f"Type mismatch: Node '{source}' outputs {source_node.output_type} "
-                    f"but node '{target}' expects {target_node.input_type}"
-                )
+        # Check for cycles
+        if self._has_cycles():
+            raise ValueError("Graph contains cycles")
 
-        # Check regular edges
-        for source, target in self._all_edges:
-            validate_type_compatibility(source, target)
-
-        # Check conditional edges
-        for source, branches in self.branches.items():
-            for branch in branches.values():
-                if branch.ends:
-                    for target in branch.ends.values():
-                        if target != END:
-                            validate_type_compatibility(source, target)
-
-        # Continue with existing validation
-        all_targets = {end for _, end in self._all_edges}
-        for target in all_targets:
-            if target not in self.nodes and target != END:
-                raise InvalidEdgeError(f"Found edge ending at unknown node `{target}`")
-        if interrupt:
-            for node in interrupt:
-                if node not in self.nodes:
-                    raise InvalidEdgeError(f"Interrupt node `{node}` not found")
-
-        self.compiled = True
+    def _has_cycles(self) -> bool:
+        """Check if the graph contains any cycles."""
+        visited = set()
+        path = set()
+        
+        def visit(node):
+            if node in path:
+                return True
+            if node in visited:
+                return False
+            
+            path.add(node)
+            visited.add(node)
+            
+            # Check edges
+            if node in self.edges:
+                for dest in self.edges[node]:
+                    if dest != END and visit(dest):
+                        return True
+            
+            # Check branches
+            if node in self.branches:
+                for branch in self.branches[node].values():
+                    if branch.then and branch.then != END and visit(branch.then):
+                        return True
+                    if branch.ends:
+                        for dest in branch.ends.values():
+                            if dest != END and visit(dest):
+                                return True
+            
+            path.remove(node)
+            return False
+        
+        return visit(START)
 
     def compile(self) -> CompiledGraph:
         """Compile the workflow graph into an executable form.

@@ -1,5 +1,7 @@
 """Unit tests for basic graph operations."""
 import pytest
+from dataclasses import dataclass
+from typing import Optional, Union
 from workflow_graph import WorkflowGraph, START, END
 from workflow_graph.exceptions import (
     InvalidNodeNameError,
@@ -7,6 +9,11 @@ from workflow_graph.exceptions import (
     InvalidEdgeError,
     TypeMismatchError
 )
+
+@dataclass
+class TestState:
+    value: Union[int, str, float]
+    result: Optional[Union[int, str, float]] = None
 
 def test_basic_graph_creation(graph):
     """Test creating an empty graph."""
@@ -86,6 +93,11 @@ def test_type_validation(graph):
     graph.add_node("str_node", str_func)
     graph.add_node("int_node", int_func)
 
+    # Add entry and exit points
+    graph.add_edge(START, "str_node")
+    graph.add_edge("str_node", END)
+    graph.add_edge("int_node", END)
+
     # Test connecting incompatible types
     with pytest.raises(TypeMismatchError):
         graph.add_edge("str_node", "int_node")
@@ -95,24 +107,38 @@ def test_type_validation_with_branches():
     # This test is similar to the previous one, but uses conditional branches
     graph = WorkflowGraph()
     
-    def add1(x: int) -> int:
-        return x + 1
+    def add1(state: TestState) -> TestState:
+        return TestState(
+            value=state.value,
+            result=state.value + 1
+        )
     
-    def is_even(x: int) -> bool:
-        return x % 2 == 0
+    def is_even(state: TestState) -> bool:
+        return state.value % 2 == 0
     
-    def to_str(x: int) -> str:
-        return str(x)
+    def to_str(state: TestState) -> TestState:
+        return TestState(
+            value=state.value,
+            result=str(state.value)
+        )
     
-    def to_float(x: int) -> float:
-        return float(x)
+    def to_float(state: TestState) -> TestState:
+        return TestState(
+            value=state.value,
+            result=float(state.value)
+        )
     
+    # Add nodes
     graph.add_node("add1", add1)
     graph.add_node("is_even", is_even)
     graph.add_node("to_str", to_str)
     graph.add_node("to_float", to_float)
     
+    # Add entry and exit points
     graph.add_edge(START, "add1")
+    graph.add_edge("add1", "is_even")
+    graph.add_edge("to_str", END)
+    graph.add_edge("to_float", END)
     
     graph.add_conditional_edges(
         "is_even",
@@ -126,18 +152,28 @@ def test_mermaid_diagram_generation():
     # Create a simple graph
     graph = WorkflowGraph()
     
-    def add(x):
-        return x + 1
+    def add(state: TestState) -> TestState:
+        return TestState(
+            value=state.value,
+            result=state.value + 1
+        )
     
-    def is_even(x):
-        return x % 2 == 0
+    def is_even(state: TestState) -> bool:
+        return state.value % 2 == 0
     
-    def handle_even(x):
-        return f"Even: {x}"
+    def handle_even(state: TestState) -> TestState:
+        return TestState(
+            value=state.value,
+            result=f"Even: {state.value}"
+        )
     
-    def handle_odd(x):
-        return f"Odd: {x}"
+    def handle_odd(state: TestState) -> TestState:
+        return TestState(
+            value=state.value,
+            result=f"Odd: {state.value}"
+        )
     
+    # Add nodes
     graph.add_node("add", add)
     graph.add_node("is_even", is_even)
     graph.add_node("handle_even", handle_even)
@@ -183,7 +219,7 @@ def test_mermaid_diagram_generation():
 def test_compile_no_entry_point():
     """Test compiling a graph with no entry point raises ValueError."""
     graph = WorkflowGraph()
-    graph.add_node("task1", lambda x: x)
+    graph.add_node("task1", lambda state: state)
     graph.add_edge("task1", END)
     with pytest.raises(ValueError, match="Graph must have at least one entry point"):
         graph.compile()
@@ -191,7 +227,7 @@ def test_compile_no_entry_point():
 def test_compile_no_finish_point():
     """Test compiling a graph with no finish point raises ValueError."""
     graph = WorkflowGraph()
-    graph.add_node("task1", lambda x: x)
+    graph.add_node("task1", lambda state: state)
     graph.add_edge(START, "task1")
     # No edge to END
     with pytest.raises(ValueError, match="Graph must have at least one finish point"):
@@ -200,9 +236,13 @@ def test_compile_no_finish_point():
 def test_compile_with_conditional_entry():
     """Test compiling a graph with only a conditional entry point."""
     graph = WorkflowGraph()
-    graph.add_node("task_a", lambda x: x)
-    graph.add_node("task_b", lambda x: x)
-    graph.add_conditional_edges(START, lambda x: "a" if x > 5 else "b", {"a": "task_a", "b": "task_b"})
+    graph.add_node("task_a", lambda state: state)
+    graph.add_node("task_b", lambda state: state)
+    graph.add_conditional_edges(
+        START,
+        lambda state: "a" if state.value > 5 else "b",
+        {"a": "task_a", "b": "task_b"}
+    )
     graph.add_edge("task_a", END)
     graph.add_edge("task_b", END)
     # Should compile without error
@@ -211,10 +251,10 @@ def test_compile_with_conditional_entry():
 def test_compile_with_conditional_finish():
     """Test compiling a graph with only conditional finish points."""
     graph = WorkflowGraph()
-    graph.add_node("task1", lambda x: x)
-    graph.add_node("task2", lambda x: x)
+    graph.add_node("task1", lambda state: state)
+    graph.add_node("task2", lambda state: state)
     graph.add_edge(START, "task1")
-    graph.add_conditional_edges("task1", lambda x: True, {True: END})
+    graph.add_conditional_edges("task1", lambda state: True, {True: END})
     graph.add_edge("task1", "task2") # Add another path to ensure not all paths must end
     graph.add_edge("task2", END) # Ensure task2 also has a path to END
     # Should compile without error

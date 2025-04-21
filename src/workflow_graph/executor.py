@@ -50,7 +50,7 @@ class CompiledGraph:
         
         # Add conditional edges with dashed lines
         for source, branch_dict in self.branches.items():
-            for branch_id, branch in branch_dict.items():
+            for _, branch in branch_dict.items():
                 # Handle the 'then' case
                 if branch.then:
                     # Use dashed lines for conditional edges
@@ -60,9 +60,9 @@ class CompiledGraph:
                 if branch.ends:
                     for condition, target in branch.ends.items():
                         # Add label to the edge showing the condition
-                        label = f"|{condition}|"
+                        label = f"{condition}"
                         # Use dashed lines for conditional edges
-                        mermaid_code.append(f"    {source} -.{label}.-> {target}")
+                        mermaid_code.append(f"    {source} -.{condition}.-> {target}")
         
         mermaid_code.append("```")
         return "\n".join(mermaid_code)
@@ -142,19 +142,13 @@ class CompiledGraph:
                 if attempts > node_spec.retry_count:
                     if node_spec.error_handler:
                         logger.error(f"Node {node_name} failed after {attempts} attempts, calling error handler: {e}")
-                        # Handle potential async error handler
-                        eh_result = node_spec.error_handler(e)
-                        if asyncio.iscoroutine(eh_result):
-                            # Await the coroutine result if the handler is async
-                            logger.debug(f"Awaiting async error handler for node {node_name}")
-                            return await eh_result
+                        # Pass both error and state to error handler
+                        if asyncio.iscoroutinefunction(node_spec.error_handler):
+                            eh_result = await node_spec.error_handler(e, node_input)
                         else:
-                            # Return the result directly if the handler is sync
-                            logger.debug(f"Returning result from sync error handler for node {node_name}")
-                            return eh_result
-                    else:
-                        logger.error(f"Node {node_name} failed after {attempts} attempts with no error handler: {e}")
-                        raise # Re-raise the exception if no handler or retries exhausted
+                            eh_result = node_spec.error_handler(e, node_input)
+                        return eh_result
+                    raise
                 
                 # Calculate exponential backoff if retry_delay is set, otherwise use fixed delay
                 wait_time = node_spec.retry_delay
@@ -189,6 +183,9 @@ class CompiledGraph:
             visited.add(visit_key)
 
             result = await self.execute_node(node_name, node_input, callback)
+            # If result is None, stop execution
+            if result is None:
+                return None
             state = result
             logger.debug(f"Node {node_name} execution result: {state}")
 
@@ -241,3 +238,38 @@ class CompiledGraph:
                 # Loop exists but is not running. Use run_until_complete.
                 logger.debug("Existing event loop found but not running, using loop.run_until_complete().")
                 return loop.run_until_complete(self.execute_async(input_data, callback)) 
+
+    async def _execute_node(self, node_name: str, data: Any) -> Any:
+        """Execute a single node in the graph."""
+        node = self.nodes[node_name]
+        retries = node.retry_count
+        attempt = 0
+
+        while True:
+            try:
+                if asyncio.iscoroutinefunction(node.action):
+                    result = await node.action(data)
+                else:
+                    result = node.action(data)
+                return result
+            except Exception as e:
+                attempt += 1
+                if attempt <= retries:
+                    delay = node.retry_delay * (node.backoff_factor ** (attempt - 1))
+                    await asyncio.sleep(delay)
+                    continue
+                
+                if node.error_handler:
+                    try:
+                        if asyncio.iscoroutinefunction(node.error_handler):
+                            result = await node.error_handler(e, data)
+                        else:
+                            result = node.error_handler(e, data)
+                        # If error handler returns None, stop execution
+                        if result is None:
+                            return None
+                        return result
+                    except Exception as handler_error:
+                        logger.error(f"Error handler for node {node_name} failed: {str(handler_error)}")
+                        raise ExecutionError(f"Error handler failed: {str(handler_error)}")
+                raise ExecutionError(f"Node {node_name} failed: {str(e)}") 

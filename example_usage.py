@@ -1,28 +1,58 @@
 import asyncio
+from dataclasses import dataclass
+from typing import Optional, List
 from workflow_graph import WorkflowGraph, START, END
 
-# Define basic nodes
-def add(data, callback=None):
-    result = data + 1
-    if callback:
-        callback(f"add: {data} -> {result}")
-    return result
+# Define your state class
+@dataclass
+class WorkflowState:
+    input_value: int
+    current_value: Optional[int] = None
+    is_even: Optional[bool] = None
+    result: Optional[str] = None
+    errors: List[str] = None
 
-def is_even(data, callback=None):
-    result = data % 2 == 0
-    if callback:
-        callback(f"is_even: {data} -> {result}")
-    return result
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
 
-def handle_even(data, callback=None):
+# Define basic nodes that work with state
+def add(state: WorkflowState, callback=None) -> WorkflowState:
+    result = state.input_value + 1
     if callback:
-        callback(f"Handling even number: {data}")
-    return f"Even: {data}"
+        callback(f"add: {state.input_value} -> {result}")
+    return WorkflowState(
+        input_value=state.input_value,
+        current_value=result,
+        errors=state.errors
+    )
 
-def handle_odd(data, callback=None):
+def is_even(state: WorkflowState) -> bool:
+    return state.current_value % 2 == 0
+
+def handle_even(state: WorkflowState, callback=None) -> WorkflowState:
+    result = f"Even: {state.current_value}"
     if callback:
-        callback(f"Handling odd number: {data}")
-    return f"Odd: {data}"
+        callback(result)
+    return WorkflowState(
+        input_value=state.input_value,
+        current_value=state.current_value,
+        is_even=True,
+        result=result,
+        errors=state.errors
+    )
+
+def handle_odd(state: WorkflowState, callback=None) -> WorkflowState:
+    result = f"Odd: {state.current_value}"
+    if callback:
+        callback(result)
+    return WorkflowState(
+        input_value=state.input_value,
+        current_value=state.current_value,
+        is_even=False,
+        result=result,
+        errors=state.errors
+    )
 
 # Create the WorkflowGraph
 graph = WorkflowGraph()
@@ -52,13 +82,15 @@ graph.add_edge("odd_handler", END)
 compiled_graph = graph.compile()
 
 # Generate and print Mermaid diagram
-print("\nMermaid Diagram Representation:")
+print("\nMermaid diagram representation:")
 print(graph.to_mermaid())
 
 # Execute the workflow
-async def run_workflow(input_data):
-    result = await compiled_graph.execute_async(input_data, callback=print)
-    print(f"Final Result: {result}")
+async def run_workflow(input_value):
+    initial_state = WorkflowState(input_value=input_value)
+    result = await compiled_graph.execute_async(initial_state, callback=print)
+    print(f"Final Result: {result.result}")
 
-# Run with an example input
-asyncio.run(run_workflow(5))  # Try changing 5 to an even number like 4
+# Run the workflow with different inputs
+asyncio.run(run_workflow(5))  # Will output: "Even: 6"
+asyncio.run(run_workflow(6))  # Will output: "Odd: 7"

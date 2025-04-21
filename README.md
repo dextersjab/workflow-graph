@@ -11,6 +11,7 @@ The JavaScript-version is available at [https://github.com/dextersjab/workflow-g
 - **Real-time streaming**: Built-in support for callbacks in each node, allowing real-time token streaming (e.g., for WebSockets).
 - **LangGraph alternative**: Unlike LangGraph, WorkflowGraph provides a simpler, fully self-contained solution without needing LangChain for streaming.
 - **Modular architecture**: Organized into separate modules for better maintainability and extensibility.
+- **State-based workflow management**: Support for state-based workflows where each node receives and returns a state object.
 
 ## Installation
 
@@ -50,31 +51,66 @@ pip install git+https://github.com/dextersjab/workflow-graph.git@main
 
 ## Basic Usage
 
-### Implementing a Workflow
+### Implementing a State-Based Workflow
 
-Here's how to create a simple workflow with conditional branching:
+Here's how to create a workflow using state management:
 
 ```python
 import asyncio
+from dataclasses import dataclass
+from typing import Optional, List
 from workflow_graph import WorkflowGraph, START, END
 
-# Define task functions
-def add(data, callback=None):
-    # The optional callback parameter can be used for streaming interim results,
-    # logging progress, or updating UI in real-time as the workflow executes
-    result = data + 1
+# Define your state class
+@dataclass
+class WorkflowState:
+    input_value: int
+    current_value: Optional[int] = None
+    is_even: Optional[bool] = None
+    result: Optional[str] = None
+    errors: List[str] = None
+
+    def __post_init__(self):
+        if self.errors is None:
+            self.errors = []
+
+# Define task functions that work with state
+def add(state: WorkflowState, callback=None) -> WorkflowState:
+    result = state.input_value + 1
     if callback:
-        callback(f"Added 1: {data} -> {result}")
-    return result
+        callback(f"Added 1: {state.input_value} -> {result}")
+    return WorkflowState(
+        input_value=state.input_value,
+        current_value=result,
+        errors=state.errors
+    )
 
-def is_even(data):
-    return data % 2 == 0
+def is_even(state: WorkflowState) -> bool:
+    return state.current_value % 2 == 0
 
-def handle_even(data):
-    return f"Even: {data}"
+def handle_even(state: WorkflowState, callback=None) -> WorkflowState:
+    result = f"Even: {state.current_value}"
+    if callback:
+        callback(result)
+    return WorkflowState(
+        input_value=state.input_value,
+        current_value=state.current_value,
+        is_even=True,
+        result=result,
+        errors=state.errors
+    )
 
-def handle_odd(data):
-    return f"Odd: {data}"
+def handle_odd(state: WorkflowState, callback=None) -> WorkflowState:
+    result = f"Odd: {state.current_value}"
+    if callback:
+        callback(result)
+    return WorkflowState(
+        input_value=state.input_value,
+        current_value=state.current_value,
+        is_even=False,
+        result=result,
+        errors=state.errors
+    )
 
 # Create and configure the workflow graph
 graph = WorkflowGraph()
@@ -101,13 +137,27 @@ graph.add_conditional_edges(
 # Set endpoints using add_edge
 graph.add_edge("even_handler", END)
 graph.add_edge("odd_handler", END)
+
+# Compile the graph
+compiled_graph = graph.compile()
+
+# Execute the workflow
+async def run_workflow(input_value):
+    initial_state = WorkflowState(input_value=input_value)
+    result = await compiled_graph.execute_async(initial_state, callback=print)
+    print(f"Final Result: {result.result}")
+
+# Run the workflow with different inputs
+asyncio.run(run_workflow(5))  # Will output: "Even: 6"
+asyncio.run(run_workflow(6))  # Will output: "Odd: 7"
 ```
 
 This example creates a workflow that:
-1. Takes a number as input
-2. Adds 1 to it
+1. Takes a number as input and wraps it in a state object
+2. Adds 1 to it, updating the state
 3. Checks if the result is even
-4. Branches to different handlers based on the result
+4. Branches to different handlers based on the result, each updating the state
+5. Returns the final state with the result
 
 ```mermaid
 stateDiagram-v2
@@ -124,6 +174,26 @@ stateDiagram-v2
 WorkflowGraph supports built-in error handling and retry capabilities:
 
 ```python
+def make_api_request(state: WorkflowState) -> WorkflowState:
+    try:
+        # Make API request
+        result = api_client.get_data(state.input_value)
+        return WorkflowState(
+            input_value=state.input_value,
+            result=result,
+            errors=state.errors
+        )
+    except Exception as e:
+        state.errors.append(str(e))
+        raise
+
+def handle_api_error(state: WorkflowState) -> WorkflowState:
+    return WorkflowState(
+        input_value=state.input_value,
+        result="Error occurred",
+        errors=state.errors
+    )
+
 graph.add_node(
     "api_call", 
     make_api_request, 
@@ -143,10 +213,11 @@ For one-time executions, use the direct execution approach:
 
 ```python
 # Execute synchronously
-result = graph.execute(input_data)
+initial_state = WorkflowState(input_value=5)
+result = graph.execute(initial_state)
 
 # Or execute asynchronously with a callback
-result = await graph.execute_async(input_data, callback=some_callback)
+result = await graph.execute_async(initial_state, callback=some_callback)
 ```
 
 ### Compile-then-Execute (More Efficient for Multiple Executions)
@@ -157,13 +228,13 @@ For workflows that will be executed multiple times, compile once and reuse:
 # Compile the graph
 compiled_graph = graph.compile()
 
-async def run_workflow(input_data):
-    # Execute with the compiled graph
+async def run_workflow(input_value):
+    initial_state = WorkflowState(input_value=input_value)
     result = await compiled_graph.execute_async(
-        input_data, 
+        initial_state, 
         callback=lambda msg: print(f"Progress update: {msg}")
     )
-    print(f"Final Result: {result}")
+    print(f"Final Result: {result.result}")
 
 # Run the workflow with different inputs
 asyncio.run(run_workflow(5))
