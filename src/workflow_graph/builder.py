@@ -127,13 +127,12 @@ class WorkflowGraph:
                 callback=callback,
             )
 
-    def add_edge(self, start_key: str, end_key: str, *, condition: Callable[[Any], bool] | None = None) -> None:
+    def add_edge(self, start_key: str, end_key: str) -> None:
         """Add a directed edge between two nodes.
         
         Args:
             start_key: Source node name
             end_key: Destination node name
-            condition: Optional condition function to determine the edge
             
         Raises:
             ValueError: If using reserved nodes incorrectly
@@ -169,14 +168,7 @@ class WorkflowGraph:
                         f"'{end_key}' expects {end_node.input_type.__name__}"
                     )
 
-        if condition is not None:
-            self.add_conditional_edges(
-                start_key,
-                condition,
-                {True: end_key}
-            )
-        else:
-            self.edges.add((start_key, end_key))
+        self.edges.add((start_key, end_key))
 
     def add_conditional_edges(
         self,

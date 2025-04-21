@@ -53,6 +53,8 @@ result = graph.execute(5)  # Result: (5 + 1) * 2 = 12
 
 ## Conditional branching
 
+For conditional branching, use `add_conditional_edges`:
+
 ```python
 def is_even(x):
     return x % 2 == 0
@@ -61,11 +63,16 @@ graph.add_node("check", is_even)
 graph.add_node("handle_even", lambda x: f"Even: {x}")
 graph.add_node("handle_odd", lambda x: f"Odd: {x}")
 
+# Add conditional branching
 graph.add_conditional_edges(
     "check",
     path=is_even,
     path_map={True: "handle_even", False: "handle_odd"}
 )
+
+# Add edges to endpoints
+graph.add_edge("handle_even", END)
+graph.add_edge("handle_odd", END)
 ```
 
 See the project's [root README.md](../../README.md) for more detailed examples and usage instructions.
