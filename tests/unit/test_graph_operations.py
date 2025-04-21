@@ -213,8 +213,8 @@ def test_mermaid_diagram_generation():
     assert "handle_odd --> __end__" in mermaid
     
     # Check for conditional edges (dashed lines)
-    assert "is_even -.|True|.-> handle_even" in mermaid
-    assert "is_even -.|False|.-> handle_odd" in mermaid
+    assert "is_even -.True.-> handle_even" in mermaid
+    assert "is_even -.False.-> handle_odd" in mermaid
 
 def test_compile_no_entry_point():
     """Test compiling a graph with no entry point raises ValueError."""
