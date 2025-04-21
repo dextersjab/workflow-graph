@@ -20,6 +20,14 @@ The JavaScript-version is available at [https://github.com/dextersjab/workflow-g
 pip install workflow-graph
 ```
 
+### Latest Alpha/Beta Version
+
+```shell
+pip install workflow-graph --pre
+```
+
+> **Note**: The alpha/beta versions may include breaking changes as the API stabilizes.
+
 ### From GitHub
 
 Add the following line to your `requirements.txt`:
