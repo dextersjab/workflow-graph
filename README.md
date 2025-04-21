@@ -102,19 +102,13 @@ This example creates a workflow that:
 4. Branches to different handlers based on the result
 
 ```mermaid
-flowchart TD
-    __start__["START"]
-    __end__["END"]
-    addition["addition"]
-    is_even_check["is_even_check"]
-    even_handler["even_handler"]
-    odd_handler["odd_handler"]
-    __start__ --> addition
+stateDiagram-v2
+    [*] --> addition
     addition --> is_even_check
-    is_even_check -.|True|.-> even_handler
-    is_even_check -.|False|.-> odd_handler
-    even_handler --> __end__
-    odd_handler --> __end__
+    is_even_check --> even_handler: true
+    is_even_check --> odd_handler: false
+    even_handler --> [*]
+    odd_handler --> [*]
 ```
 
 ### Error Handling and Retries
