@@ -48,7 +48,7 @@ Here's how to create a simple workflow with conditional branching:
 
 ```python
 import asyncio
-from workflow_graph import WorkflowGraph
+from workflow_graph import WorkflowGraph, START, END
 
 # Define task functions
 def add(data, callback=None):
@@ -77,8 +77,8 @@ graph.add_node("is_even_check", is_even)
 graph.add_node("even_handler", handle_even)
 graph.add_node("odd_handler", handle_odd)
 
-# Define starting point
-graph.set_entry_point("addition")
+# Define starting point using add_edge
+graph.add_edge(START, "addition")
 
 # Define flow between nodes
 graph.add_edge("addition", "is_even_check")
@@ -90,9 +90,9 @@ graph.add_conditional_edges(
     path_map={True: "even_handler", False: "odd_handler"}
 )
 
-# Set endpoints
-graph.set_finish_point("even_handler")
-graph.set_finish_point("odd_handler")
+# Set endpoints using add_edge
+graph.add_edge("even_handler", END)
+graph.add_edge("odd_handler", END)
 ```
 
 This example creates a workflow that:

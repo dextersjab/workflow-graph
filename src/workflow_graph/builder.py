@@ -203,14 +203,6 @@ class WorkflowGraph:
             )
         self.branches[source][name] = Branch(path, path_map, then)
 
-    def set_entry_point(self, key: str) -> None:
-        """Set the entry point for the workflow.
-        
-        Args:
-            key: Node name to use as entry point
-        """
-        return self.add_edge(START, key)
-
     def set_conditional_entry_point(
         self,
         path: Callable[[Any], Hashable | list[Hashable]],
@@ -225,14 +217,6 @@ class WorkflowGraph:
             then: Optional default entry node
         """
         return self.add_conditional_edges(START, path, path_map, then)
-
-    def set_finish_point(self, key: str) -> None:
-        """Set the finish point for the workflow.
-        
-        Args:
-            key: Node name to use as finish point
-        """
-        return self.add_edge(key, END)
 
     def validate(self, interrupt: Sequence[str] | None = None) -> None:
         """Validate the workflow graph.
@@ -309,10 +293,25 @@ class WorkflowGraph:
         """
         self.validate()
         
-        # Check for entry point
-        entry_edges = [dst for src, dst in self._all_edges if src == START]
-        if not entry_edges and not self.branches.get(START):
-            raise ValueError("Graph must have at least one entry point (an edge from START)")
+        # Check for at least one entry point (edge from START)
+        has_entry_edge = any(src == START for src, _ in self._all_edges)
+        has_conditional_entry = START in self.branches
+        if not has_entry_edge and not has_conditional_entry:
+            raise ValueError(
+                f"Graph must have at least one entry point defined by adding an edge from '{START}' or a conditional edge from '{START}'"
+            )
+            
+        # Check for at least one finish point (edge to END)
+        has_finish_edge = any(dst == END for _, dst in self._all_edges)
+        has_conditional_finish = any(
+            (branch.then == END or (branch.ends and END in branch.ends.values()))
+            for branches in self.branches.values()
+            for branch in branches.values()
+        )
+        if not has_finish_edge and not has_conditional_finish:
+             raise ValueError(
+                f"Graph must have at least one finish point defined by adding an edge to '{END}' or a conditional edge to '{END}'"
+            )
 
         # Check for unreachable nodes
         if len(self.nodes) > 0:

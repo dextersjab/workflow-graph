@@ -112,8 +112,7 @@ def test_type_validation_with_branches():
     graph.add_node("to_str", to_str)
     graph.add_node("to_float", to_float)
     
-    graph.set_entry_point("add1")
-    graph.add_edge("add1", "is_even")
+    graph.add_edge(START, "add1")
     
     graph.add_conditional_edges(
         "is_even",
@@ -144,7 +143,7 @@ def test_mermaid_diagram_generation():
     graph.add_node("handle_even", handle_even)
     graph.add_node("handle_odd", handle_odd)
     
-    graph.set_entry_point("add")
+    graph.add_edge(START, "add")
     graph.add_edge("add", "is_even")
     
     graph.add_conditional_edges(
@@ -153,9 +152,11 @@ def test_mermaid_diagram_generation():
         path_map={True: "handle_even", False: "handle_odd"}
     )
     
-    graph.set_finish_point("handle_even")
-    graph.set_finish_point("handle_odd")
-    
+    graph.add_edge("handle_even", END)
+    graph.add_edge("handle_odd", END)
+
+    # Compile the graph (which also runs validation)
+
     # Generate Mermaid diagram
     mermaid = graph.to_mermaid()
     
@@ -177,4 +178,44 @@ def test_mermaid_diagram_generation():
     
     # Check for conditional edges (dashed lines)
     assert "is_even -.|True|.-> handle_even" in mermaid
-    assert "is_even -.|False|.-> handle_odd" in mermaid 
+    assert "is_even -.|False|.-> handle_odd" in mermaid
+
+def test_compile_no_entry_point():
+    """Test compiling a graph with no entry point raises ValueError."""
+    graph = WorkflowGraph()
+    graph.add_node("task1", lambda x: x)
+    graph.add_edge("task1", END)
+    with pytest.raises(ValueError, match="Graph must have at least one entry point"):
+        graph.compile()
+
+def test_compile_no_finish_point():
+    """Test compiling a graph with no finish point raises ValueError."""
+    graph = WorkflowGraph()
+    graph.add_node("task1", lambda x: x)
+    graph.add_edge(START, "task1")
+    # No edge to END
+    with pytest.raises(ValueError, match="Graph must have at least one finish point"):
+        graph.compile()
+
+def test_compile_with_conditional_entry():
+    """Test compiling a graph with only a conditional entry point."""
+    graph = WorkflowGraph()
+    graph.add_node("task_a", lambda x: x)
+    graph.add_node("task_b", lambda x: x)
+    graph.add_conditional_edges(START, lambda x: "a" if x > 5 else "b", {"a": "task_a", "b": "task_b"})
+    graph.add_edge("task_a", END)
+    graph.add_edge("task_b", END)
+    # Should compile without error
+    graph.compile()
+
+def test_compile_with_conditional_finish():
+    """Test compiling a graph with only conditional finish points."""
+    graph = WorkflowGraph()
+    graph.add_node("task1", lambda x: x)
+    graph.add_node("task2", lambda x: x)
+    graph.add_edge(START, "task1")
+    graph.add_conditional_edges("task1", lambda x: True, {True: END})
+    graph.add_edge("task1", "task2") # Add another path to ensure not all paths must end
+    graph.add_edge("task2", END) # Ensure task2 also has a path to END
+    # Should compile without error
+    graph.compile() 
