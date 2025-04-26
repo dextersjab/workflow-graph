@@ -149,18 +149,19 @@ async def test_async_retry(graph):
     """Test retry policy with async node."""
     attempts = 0
 
-    async def async_failing_node(x: int) -> int:
+    async def async_failing_node(state: State) -> State:
         nonlocal attempts
         attempts += 1
         await asyncio.sleep(0.1)
         if attempts < 3:
             raise ValueError("Temporary async failure")
-        return x + 1
+        return State(value=state.value + 1, errors=state.errors)
 
     graph.add_node("async_retry_node", async_failing_node, retries=3, backoff_factor=0.1)
     graph.add_edge(START, "async_retry_node")
     graph.add_edge("async_retry_node", END)
-    result = await graph.execute_async(1)
+    initial_state = State(value=1)
+    result = await graph.execute_async(initial_state)
 
     assert attempts == 3
-    assert result == 2 
+    assert result.value == 2 
