@@ -77,7 +77,7 @@ class Node(Generic[T]):
     name: str
     func: Callable[[T], T]
     callback: Optional[Callable[[T], None]] = None
-    error_handler: Optional[Callable[[Exception, T], T]] = None
+    on_error: Optional[Callable[[Exception, T], T]] = None
     retries: int = 0
     retry_delay: float = 0.5
     backoff_factor: Optional[float] = None

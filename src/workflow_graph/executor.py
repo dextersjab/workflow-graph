@@ -146,6 +146,35 @@ class CompiledGraph:
         
         return self
 
+    async def _invoke_callbacks(
+        self,
+        node: Node,
+        node_name: str,
+        result: State,
+        callback: Callable[[str, State], None] | None = None
+    ) -> None:
+        """Invoke both node-specific and global callbacks with the given result.
+        
+        Args:
+            node: The node that produced the result
+            node_name: Name of the node
+            result: The state to pass to callbacks
+            callback: Optional global callback function
+        """
+        # Node-level callback
+        if node.callback:
+            if asyncio.iscoroutinefunction(node.callback):
+                await node.callback(result)
+            else:
+                node.callback(result)
+        
+        # Global callback
+        if callback:
+            if asyncio.iscoroutinefunction(callback):
+                await callback(node_name, result)
+            else:
+                callback(node_name, result)
+
     async def execute_node(self, node_name: str, input_data: Any, callback: Callable[[str, Any], None] | None = None) -> Any:
         """Execute a single node in the workflow graph."""
         if node_name not in self.nodes:
@@ -168,19 +197,8 @@ class CompiledGraph:
             if not isinstance(result, State):
                 raise ValueError(f"Node {node_name} must return a State object, got {type(result)}")
             
-            # Call the node's callback if it exists
-            if node.callback:
-                if asyncio.iscoroutinefunction(node.callback):
-                    await node.callback(result)
-                else:
-                    node.callback(result)
-            
-            # Call the global callback if it exists
-            if callback:
-                if asyncio.iscoroutinefunction(callback):
-                    await callback(node_name, result)
-                else:
-                    callback(node_name, result)
+            # Call callbacks with the result
+            await self._invoke_callbacks(node, node_name, result, callback)
             
             # Return the new state
             return type(input_data)(
@@ -194,16 +212,19 @@ class CompiledGraph:
             
         except Exception as e:
             logger.exception(f"Error in node {node_name}: {e}")
-            if node.error_handler:
+            if node.on_error:
                 try:
-                    if asyncio.iscoroutinefunction(node.error_handler):
-                        result = await node.error_handler(e, input_data)
+                    if asyncio.iscoroutinefunction(node.on_error):
+                        result = await node.on_error(e, input_data)
                     else:
-                        result = node.error_handler(e, input_data)
+                        result = node.on_error(e, input_data)
                     
                     # Validate that error handler returns a State object
                     if not isinstance(result, State):
                         raise ValueError(f"Error handler for node {node_name} must return a State object, got {type(result)}")
+                    
+                    # Call callbacks with the error handler result
+                    await self._invoke_callbacks(node, node_name, result, callback)
                     
                     return result
                 except Exception as handler_error:
@@ -309,11 +330,11 @@ class CompiledGraph:
             except Exception as e:
                 logger.exception(f"Error during execution at node {current_node}: {e}")
                 state.add_error(e, current_node)
-                if current_node in self.nodes and self.nodes[current_node].error_handler is not None:
-                    if asyncio.iscoroutinefunction(self.nodes[current_node].error_handler):
-                        await self.nodes[current_node].error_handler(e, state)
+                if current_node in self.nodes and self.nodes[current_node].on_error is not None:
+                    if asyncio.iscoroutinefunction(self.nodes[current_node].on_error):
+                        await self.nodes[current_node].on_error(e, state)
                     else:
-                        self.nodes[current_node].error_handler(e, state)
+                        self.nodes[current_node].on_error(e, state)
                     
         return state
 
@@ -364,12 +385,12 @@ class CompiledGraph:
                     await asyncio.sleep(delay)
                     continue
                 
-                if node.error_handler:
+                if node.on_error:
                     try:
-                        if asyncio.iscoroutinefunction(node.error_handler):
-                            result = await node.error_handler(e, data)
+                        if asyncio.iscoroutinefunction(node.on_error):
+                            result = await node.on_error(e, data)
                         else:
-                            result = node.error_handler(e, data)
+                            result = node.on_error(e, data)
                         # If error handler returns None, stop execution
                         if result is None:
                             return None

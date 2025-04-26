@@ -90,7 +90,7 @@ class WorkflowGraph(Generic[T]):
             name=name,
             func=func,
             callback=callback,
-            error_handler=on_error,
+            on_error=on_error,
             retries=retries,
             retry_delay=retry_delay,
             backoff_factor=backoff_factor,

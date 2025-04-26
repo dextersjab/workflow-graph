@@ -140,31 +140,28 @@ async def test_callback_error_handling(graph):
     error_handler_called = False
 
     async def failing_node(state: TestState) -> TestState:
-        print("DEBUG: Entering failing_node")
         await asyncio.sleep(0.1)
         raise ValueError("Node failed")
 
-    async def error_handler(error: Exception, state: TestState) -> TestState:
-        print("DEBUG: Entering error_handler")
+    async def on_error(error: Exception, state: TestState) -> TestState:
         nonlocal error_handler_called
         error_handler_called = True
         await asyncio.sleep(0.1)
-        print("DEBUG: Error handler completed")
         new_state = state.copy()
         new_state.update_value(-1)
         new_state.add_error(error)
         return new_state
 
-    def node_callback(result: TestState):
-        print("DEBUG: Entering callback")
+    def node_callback(node_name: str, result: TestState):
+        print(f"DEBUG: {node_name} callback -> {result}")
         callback_results.append(result.value)
 
-    graph.add_node("failing_node", failing_node, error_handler=error_handler)
+    graph.add_node("failing_node", failing_node, on_error=on_error)
     graph.add_edge(START, "failing_node")
     graph.add_edge("failing_node", END)
 
     initial_state = TestState(value=1)
-    result = await graph.execute_async(initial_state)
+    result = await graph.execute_async(initial_state, callback=node_callback)
 
     assert error_handler_called
     assert len(result.errors) == 1

@@ -46,7 +46,7 @@ def test_error_handling_with_state(graph):
     def failing_node(state: TestState) -> TestState:
         raise ValueError("Simulated error")
 
-    def error_handler(error: Exception, state: TestState) -> TestState:
+    def on_error(error: Exception, state: TestState) -> TestState:
         return TestState(
             value=state.value,
             result=-1,
@@ -57,7 +57,7 @@ def test_error_handling_with_state(graph):
         "failing_node",
         failing_node,
         retries=0,
-        on_error=error_handler
+        on_error=on_error
     )
     graph.add_edge(START, "failing_node")
     graph.add_edge("failing_node", END)
@@ -104,7 +104,7 @@ def test_error_handler(graph):
     def failing_node(state: TestState) -> TestState:
         raise ValueError("Permanent failure")
 
-    def error_handler(error: Exception, state: TestState) -> TestState:
+    def on_error(error: Exception, state: TestState) -> TestState:
         assert isinstance(error, ValueError)
         assert str(error) == "Permanent failure"
         return TestState(
@@ -113,7 +113,7 @@ def test_error_handler(graph):
             errors=state.errors + [str(error)]
         )
 
-    graph.add_node("fail_node", failing_node, on_error=error_handler)
+    graph.add_node("fail_node", failing_node, on_error=on_error)
     graph.add_edge(START, "fail_node")
     graph.add_edge("fail_node", END)
     result = graph.execute(TestState(value=1))
@@ -131,7 +131,7 @@ def test_retry_then_error_handler(graph):
         attempts += 1
         raise ValueError(f"Failure #{attempts}")
 
-    def error_handler(error: Exception, state: TestState) -> TestState:
+    def on_error(error: Exception, state: TestState) -> TestState:
         assert isinstance(error, ValueError)
         assert str(error) == "Failure #3"  # Should be called after all retries
         return TestState(
@@ -145,7 +145,7 @@ def test_retry_then_error_handler(graph):
         failing_node,
         retries=2,
         backoff_factor=0.1,
-        on_error=error_handler
+        on_error=on_error
     )
     graph.add_edge(START, "retry_fail_node")
     graph.add_edge("retry_fail_node", END)

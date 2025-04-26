@@ -112,7 +112,7 @@ assert result.result == 4  # 3 + 1 = 4
 def failing_operation(state: State) -> State:
     raise ValueError("Operation failed")
 
-def error_handler(error: Exception, state: State) -> State:
+def on_error(error: Exception, state: State) -> State:
     return State(value=state.value, result=-1)
 
 graph = WorkflowGraph()
@@ -121,7 +121,7 @@ graph.add_node(
     failing_operation,
     retries=2,
     backoff_factor=0.1,
-    on_error=error_handler
+    on_error=on_error
 )
 graph.add_edge(START, "failing_op")
 graph.add_edge("failing_op", END)
