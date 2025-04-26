@@ -409,7 +409,7 @@ class WorkflowGraph(Generic[T]):
         )
         return compiled
 
-    def execute(self, data: Any) -> Any:
+    def execute(self, data: Any) -> State:
         """Execute the workflow graph with the given input."""
         return self.compile().execute(data)
 

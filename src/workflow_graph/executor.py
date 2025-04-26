@@ -187,11 +187,24 @@ class CompiledGraph:
             # Extract the value from the state if it's a State object
             if not isinstance(input_data, State):
                 raise ValueError("Node input must be a State object")
-            # Execute the node's function
-            if asyncio.iscoroutinefunction(node.func):
-                result = await node.func(input_data)
-            else:
-                result = node.func(input_data)
+            
+            # Execute the node's function with retry logic
+            retries = node.retries
+            attempt = 0
+            while True:
+                try:
+                    if asyncio.iscoroutinefunction(node.func):
+                        result = await node.func(input_data)
+                    else:
+                        result = node.func(input_data)
+                    break
+                except Exception as e:
+                    attempt += 1
+                    if attempt <= retries:
+                        delay = node.retry_delay * (node.backoff_factor ** (attempt - 1))
+                        await asyncio.sleep(delay)
+                        continue
+                    raise
             
             # Validate that result is a State object
             if not isinstance(result, State):
@@ -350,7 +363,7 @@ class CompiledGraph:
                     
         return state
 
-    def execute(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
+    def execute(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> State:
         """Execute the workflow graph synchronously."""
         try:
             loop = asyncio.get_running_loop()

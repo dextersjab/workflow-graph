@@ -8,13 +8,7 @@ from workflow_graph.exceptions import ExecutionError
 
 @dataclass
 class TestState(State):
-    value: int
-    result: Optional[int] = None
-    errors: List[str] = None
-
-    def __post_init__(self):
-        if self.errors is None:
-            self.errors = []
+    pass
 
 def test_retry_policy(graph):
     """Test retry policy for a temporarily failing node."""
@@ -26,8 +20,7 @@ def test_retry_policy(graph):
         if attempts < 3:  # Fail twice, succeed on third attempt
             raise ValueError("Temporary failure")
         return TestState(
-            value=state.value,
-            result=state.value + 1,
+            value=state.value + 1,
             errors=state.errors
         )
 
@@ -39,7 +32,7 @@ def test_retry_policy(graph):
     result = graph.execute(initial_state)
 
     assert attempts == 3  # Should have attempted 3 times
-    assert result.result == 2  # Should eventually succeed and return x + 1
+    assert result.value == 2  # Should eventually succeed and return x + 1
 
 def test_error_handling_with_state(graph):
     """Test error handling that preserves state information."""
@@ -48,8 +41,7 @@ def test_error_handling_with_state(graph):
 
     def on_error(error: Exception, state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=-1,
+            value=-1,
             errors=state.errors + [f"Error handled: {str(error)}"]
         )
 
@@ -65,7 +57,7 @@ def test_error_handling_with_state(graph):
     initial_state = TestState(value=1)
     result = graph.execute(initial_state)
 
-    assert result.result == -1
+    assert result.value == -1
     assert len(result.errors) == 1
     assert "Error handled: Simulated error" in result.errors[0]
 
@@ -78,8 +70,7 @@ def test_async_error_handling(graph):
     async def async_error_handler(error: Exception, state: TestState) -> TestState:
         await asyncio.sleep(0.1)
         return TestState(
-            value=state.value,
-            result=-1,
+            value=-1,
             errors=state.errors + [f"Async error handled: {str(error)}"]
         )
 
@@ -95,7 +86,7 @@ def test_async_error_handling(graph):
     initial_state = TestState(value=1)
     result = asyncio.run(graph.execute_async(initial_state))
 
-    assert result.result == -1
+    assert result.value == -1
     assert len(result.errors) == 1
     assert "Async error handled: Async error" in result.errors[0]
 
@@ -109,7 +100,6 @@ def test_error_handler(graph):
         assert str(error) == "Permanent failure"
         return TestState(
             value=state.value,
-            result=-1,
             errors=state.errors + [str(error)]
         )
 
@@ -118,7 +108,7 @@ def test_error_handler(graph):
     graph.add_edge("fail_node", END)
     result = graph.execute(TestState(value=1))
 
-    assert result.result == -1  # Should return error handler result
+    assert result.value == -1  # Should return error handler result
     assert len(result.errors) == 1
     assert "Permanent failure" in result.errors[0]
 
@@ -135,8 +125,7 @@ def test_retry_then_error_handler(graph):
         assert isinstance(error, ValueError)
         assert str(error) == "Failure #3"  # Should be called after all retries
         return TestState(
-            value=state.value,
-            result=-1,
+            value=-1,
             errors=state.errors + [str(error)]
         )
 
@@ -151,7 +140,7 @@ def test_retry_then_error_handler(graph):
     graph.add_edge("retry_fail_node", END)
     result = graph.execute(TestState(value=1))
     assert attempts == 3  # Should have attempted 3 times (initial + 2 retries)
-    assert result.result == -1  # Should return error handler result
+    assert result.value == -1  # Should return error handler result
     assert len(result.errors) == 1
     assert "Failure #3" in result.errors[0]
 
