@@ -99,7 +99,7 @@ def test_error_handler(graph):
         assert isinstance(error, ValueError)
         assert str(error) == "Permanent failure"
         return TestState(
-            value=state.value,
+            value=-1,
             errors=state.errors + [str(error)]
         )
 
