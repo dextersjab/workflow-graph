@@ -1,20 +1,35 @@
 """Unit tests for branch handling and callback timing in workflow graph."""
 import pytest
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 from workflow_graph import START, END, State
 import traceback
 
 @dataclass
 class TestState(State[int]):
-    """Test state that extends State with additional fields for testing."""
-    callbacks: List[str] = None
+    """Test state that extends State with additional fields for testing.
+    
+    This state class tracks callback execution history and maintains
+    the standard State functionality for workflow execution.
+    """
+    callback_history: List[str] = field(default_factory=list)
 
-    def __post_init__(self):
-        super().__post_init__()
-        if self.callbacks is None:
-            self.callbacks = []
+    def copy(self) -> 'TestState':
+        """Create a deep copy of this state."""
+        return TestState(
+            value=self.value,
+            data=self.data.copy(),
+            current_node=self.current_node,
+            processed_by=self.processed_by.copy(),
+            trajectory=self.trajectory.copy(),
+            errors=self.errors.copy(),
+            callback_history=self.callback_history.copy()
+        )
+
+    def add_callback_history(self, callback_name: str) -> None:
+        """Add a callback execution to the history."""
+        self.callback_history.append(callback_name)
 
 @pytest.mark.asyncio
 async def test_async_branch_condition(graph):
@@ -86,28 +101,12 @@ async def test_callback_timing(graph):
 
     async def async_node(state: TestState) -> TestState:
         await asyncio.sleep(0.1)
-        new_state = TestState(
-            value=state.value,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            processed_by=state.processed_by.copy(),
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy(),
-            callbacks=state.callbacks + ["async_node"]
-        )
+        new_state = state.copy()
         new_state.update_value(state.value + 1)
         return new_state
 
     def sync_node(state: TestState) -> TestState:
-        new_state = TestState(
-            value=state.value,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            processed_by=state.processed_by.copy(),
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy(),
-            callbacks=state.callbacks + ["sync_node"]
-        )
+        new_state = state.copy()
         new_state.update_value(state.value + 1)
         return new_state
 
@@ -126,7 +125,10 @@ async def test_callback_timing(graph):
     initial_state = TestState(value=1)
     result = await graph.execute_async(initial_state)
 
+    # Verify the final state value
     assert result.value == 3  # 1 + 1 (async) + 1 (sync) = 3
+    
+    # Verify callback execution order and timing
     assert len(callback_results) == 2
     assert callback_results[0] == ("async", 2)  # Called after async_node
     assert callback_results[1] == ("sync", 3)   # Called after sync_node
@@ -148,15 +150,7 @@ async def test_callback_error_handling(graph):
         error_handler_called = True
         await asyncio.sleep(0.1)
         print("DEBUG: Error handler completed")
-        new_state = TestState(
-            value=state.value,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            processed_by=state.processed_by.copy(),
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy(),
-            callbacks=state.callbacks.copy()
-        )
+        new_state = state.copy()
         new_state.update_value(-1)
         new_state.add_error(error)
         return new_state
@@ -175,6 +169,8 @@ async def test_callback_error_handling(graph):
     assert error_handler_called
     assert len(result.errors) == 1
     assert result.value == -1
+    assert len(callback_results) == 1
+    assert callback_results[0] == -1  # Callback should receive the error handler's state
 
 @pytest.mark.asyncio
 async def test_nested_branch_handling(graph):
