@@ -22,4 +22,12 @@ class TypeMismatchError(WorkflowGraphError):
 
 class ExecutionError(WorkflowGraphError):
     """Raised when there is an error during workflow execution."""
+    pass
+
+class ValidationError(WorkflowGraphError):
+    """Raised when graph validation fails."""
+    pass
+
+class EntryExitValidationError(ValidationError):
+    """Raised when a graph is missing proper entry or exit points."""
     pass 

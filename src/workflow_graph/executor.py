@@ -4,9 +4,11 @@ import asyncio
 import logging
 from collections import defaultdict, deque
 from typing import Any, Callable, Hashable
+import inspect
 
 from .constants import START, END
-from .models import Branch, NodeSpec
+from .models import Branch, Node, State
+from .exceptions import ExecutionError, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,7 @@ class CompiledGraph:
     with a given input to produce an output.
     """
     
-    def __init__(self, nodes: dict[str, NodeSpec], edges: set[tuple[str, str]], branches: dict[str, dict[str, Branch]]):
+    def __init__(self, nodes: dict[str, Node], edges: set[tuple[str, str]], branches: dict[str, dict[str, Branch]]):
         """Initialize a compiled graph."""
         self.nodes = nodes
         self.edges = defaultdict(list)
@@ -75,6 +77,7 @@ class CompiledGraph:
             
         Raises:
             ValueError: If validation fails (e.g., unreachable nodes)
+            ValidationError: If type validation fails
         """
         self.compiled = True
         
@@ -99,7 +102,7 @@ class CompiledGraph:
                 
                 # Add all nodes reachable from branches
                 if node in self.branches:
-                    for branch in self.branches[node].values():  # Use values() to iterate over branches
+                    for branch in self.branches[node].values():
                         if branch.then and branch.then != END:
                             queue.append(branch.then)
                         if branch.ends:
@@ -112,52 +115,95 @@ class CompiledGraph:
             if unreachable:
                 raise ValueError(f"Unreachable nodes detected: {', '.join(unreachable)}")
         
+        # Validate type consistency
+        def get_node_type(node_name: str) -> type:
+            if node_name == START or node_name == END:
+                return Any
+            return self.nodes[node_name].output_type
+        
+        # Check each edge for type compatibility
+        for source, destinations in self.edges.items():
+            source_type = get_node_type(source)
+            for dest in destinations:
+                dest_type = get_node_type(dest)
+                if source_type != Any and dest_type != Any and source_type != dest_type:
+                    raise ValidationError(f"Type mismatch between nodes: {source} ({source_type}) -> {dest} ({dest_type})")
+        
+        # Check each branch for type compatibility
+        for source, branches in self.branches.items():
+            source_type = get_node_type(source)
+            for branch_name, branch in branches.items():
+                # Check condition return type
+                if branch.condition and not isinstance(branch.condition, bool):
+                    # TODO: Add proper type checking for condition functions
+                    pass
+                
+                # Check destination types
+                if branch.then:
+                    then_type = get_node_type(branch.then)
+                    if source_type != Any and then_type != Any and source_type != then_type:
+                        raise ValidationError(f"Type mismatch in branch {branch_name}: {source} ({source_type}) -> then: {branch.then} ({then_type})")
+                
+                if branch.else_:
+                    else_type = get_node_type(branch.else_)
+                    if source_type != Any and else_type != Any and source_type != else_type:
+                        raise ValidationError(f"Type mismatch in branch {branch_name}: {source} ({source_type}) -> else: {branch.else_} ({else_type})")
+                
+                if branch.ends:
+                    for condition_value, dest in branch.ends.items():
+                        dest_type = get_node_type(dest)
+                        if source_type != Any and dest_type != Any and source_type != dest_type:
+                            raise ValidationError(f"Type mismatch in branch {branch_name}: {source} ({source_type}) -> {dest} ({dest_type})")
+        
         return self
 
-    async def execute_node(self, node_name: str, node_input: Any, callback: Callable[[Any], None] | None = None) -> Any:
-        """Execute a node with retry logic."""
-        if node_name == START or node_name == END:
-            return node_input
-
-        node_spec = self.nodes[node_name]
-        action = node_spec.action
-        attempts = 0
-
-        while True:
-            try:
-                if asyncio.iscoroutinefunction(action):
-                    result = await action(node_input)
+    async def execute_node(self, node_name: str, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
+        """Execute a single node in the workflow graph."""
+        if node_name not in self.nodes:
+            raise ValueError(f"Node {node_name} not found in graph")
+        
+        node = self.nodes[node_name]
+        logger.debug(f"Executing node {node_name} with input: {input_data}")
+        
+        try:
+            # Extract the value from the state if it's a State object
+            if not isinstance(input_data, State):
+                raise ValueError("Node input must be a State object")
+            # Execute the node's function
+            if asyncio.iscoroutinefunction(node.func):
+                result = await node.func(input_data)
+            else:
+                result = node.func(input_data)
+            
+            # Call the node's callback if it exists
+            if node.callback:
+                if asyncio.iscoroutinefunction(node.callback):
+                    await node.callback(result)
                 else:
-                    result = action(node_input)
-
-                if node_spec.callback:
-                    node_spec.callback()
-
-                if callback:
+                    node.callback(result)
+            
+            # Call the global callback if it exists
+            if callback:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(result)
+                else:
                     callback(result)
-
-                return result
-            except Exception as e:
-                attempts += 1
-                if attempts > node_spec.retry_count:
-                    if node_spec.error_handler:
-                        logger.error(f"Node {node_name} failed after {attempts} attempts, calling error handler: {e}")
-                        # Pass both error and state to error handler
-                        if asyncio.iscoroutinefunction(node_spec.error_handler):
-                            eh_result = await node_spec.error_handler(e, node_input)
-                        else:
-                            eh_result = node_spec.error_handler(e, node_input)
-                        return eh_result
-                    raise
-                
-                # Calculate exponential backoff if retry_delay is set, otherwise use fixed delay
-                wait_time = node_spec.retry_delay
-                if node_spec.backoff_factor and node_spec.backoff_factor > 0:
-                     # Simple exponential backoff: delay * factor^(attempt-1)
-                     wait_time = node_spec.retry_delay * (node_spec.backoff_factor ** (attempts - 1))
-
-                logger.warning(f"Node {node_name} failed (attempt {attempts}/{node_spec.retry_count+1}), retrying in {wait_time:.2f}s: {e}")
-                await asyncio.sleep(wait_time)
+            
+            # Return a new state with the result
+            return State(
+                value=result,
+                processed_by=input_data.processed_by.copy(),
+                branch_taken=input_data.branch_taken
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in node {node_name}: {e}")
+            if node.error_handler:
+                if asyncio.iscoroutinefunction(node.error_handler):
+                    return await node.error_handler(e, input_data)
+                else:
+                    return node.error_handler(e, input_data)
+            raise
 
     async def execute_async(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
         """Execute the workflow graph asynchronously."""
@@ -165,52 +211,96 @@ class CompiledGraph:
         visited = set()
         
         logger.debug(f"Starting execution with input: {input_data}")
-        queue.append((START, input_data))
-        state = input_data
+        
+        # Validate input state
+        if not isinstance(input_data, State):
+            raise ValueError("Input must be a State object")
+        if not hasattr(input_data, 'processed_by'):
+            raise ValueError("State object must have 'processed_by' attribute")
+        if not hasattr(input_data, 'branch_taken'):
+            raise ValueError("State object must have 'branch_taken' attribute")
 
+        queue.append((START, input_data))
+        
         while queue:
-            node_name, node_input = queue.popleft()
-            logger.debug(f"Processing node: {node_name} with input: {node_input}")
+            current_node, node_input = queue.popleft()
+            logger.debug(f"Processing node: {current_node} with input: {node_input}")
             
-            if node_name == END:
-                logger.debug(f"Reached END node, returning state: {state}")
-                return state
+            if current_node == END:
+                logger.debug(f"Reached END node, returning state: {node_input}")
+                return node_input.value
             
-            visit_key = (node_name, str(node_input))
+            visit_key = (current_node, str(node_input))
             if visit_key in visited:
-                logger.debug(f"Skipping already visited node: {node_name}")
+                logger.debug(f"Skipping already visited node: {current_node}")
                 continue
             visited.add(visit_key)
 
-            result = await self.execute_node(node_name, node_input, callback)
-            # If result is None, stop execution
-            if result is None:
-                return None
-            state = result
-            logger.debug(f"Node {node_name} execution result: {state}")
+            try:
+                # Handle START node - just enqueue its outgoing edges
+                if current_node == START:
+                    # Add all direct edge destinations from START
+                    for next_node in self.edges[START]:
+                        queue.append((next_node, node_input))
+                    # Add all conditional branch destinations from START
+                    if START in self.branches:
+                        for branch_name, branch in self.branches[START].items():
+                            if branch.ends:
+                                for dest in branch.ends.values():
+                                    queue.append((dest, node_input))
+                    continue
 
-            if node_name in self.branches:
-                logger.debug(f"Processing branches for node {node_name}")
-                for branch in self.branches[node_name].values():
-                    path_value = branch.path(node_input)  # Use node_input to determine path
-                    logger.debug(f"Branch path value: {path_value}")
-                    if branch.ends and path_value in branch.ends:
-                        next_node = branch.ends[path_value]
-                        logger.debug(f"Adding next node from branch: {next_node}")
-                        queue.append((next_node, node_input))  # Use node_input for next node
-                    elif branch.then:
-                        logger.debug(f"Adding then node from branch: {branch.then}")
-                        queue.append((branch.then, node_input))  # Use node_input for next node
-            
-            elif node_name in self.edges:
-                logger.debug(f"Processing edges for node {node_name}")
-                for dest in self.edges[node_name]:
-                    logger.debug(f"Adding next node from edge: {dest}")
-                    queue.append((dest, result))  # Use result for next node in regular edges
-
-        # If we've exhausted the queue without reaching END, return the final state
-        logger.debug(f"No more nodes to process, returning final state: {state}")
-        return state
+                # Execute the node and get the result
+                result = await self.execute_node(current_node, node_input, callback)
+                if result is None:
+                    return None
+                
+                # Validate result state
+                if not isinstance(result, State):
+                    raise ValueError("Node must return a State object")
+                
+                # Update processed nodes
+                result.processed_by.append(current_node)
+                
+                # Check for branches first
+                if current_node in self.branches:
+                    branch_taken = False
+                    for branch_name, branch in self.branches[current_node].items():
+                        # Evaluate the condition with the state value
+                        if asyncio.iscoroutinefunction(branch.condition):
+                            condition_result = await branch.condition(result.value)
+                        else:
+                            condition_result = branch.condition(result.value)
+                        
+                        # Update branch taken in state
+                        if condition_result:
+                            result.branch_taken = branch_name
+                            branch_taken = True
+                            
+                            # Determine next node based on condition
+                            next_node = None
+                            if branch.ends:
+                                if condition_result in branch.ends:
+                                    next_node = branch.ends[condition_result]
+                                elif str(condition_result) in branch.ends:
+                                    next_node = branch.ends[str(condition_result)]
+                            
+                            if next_node:
+                                queue.append((next_node, result))
+                    
+                    # Fail fast if no branch condition matches
+                    if not branch_taken:
+                        raise ValueError(f"No branch condition matched for node {current_node}")
+                else:
+                    # Add all direct edge destinations to the queue
+                    for next_node in self.edges[current_node]:
+                        queue.append((next_node, result))
+                
+            except Exception as e:
+                logger.error(f"Error executing node {current_node}: {e}")
+                raise
+        
+        return node_input.value
 
     def execute(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
         """Execute the workflow graph synchronously."""
@@ -242,15 +332,15 @@ class CompiledGraph:
     async def _execute_node(self, node_name: str, data: Any) -> Any:
         """Execute a single node in the graph."""
         node = self.nodes[node_name]
-        retries = node.retry_count
+        retries = node.retries
         attempt = 0
 
         while True:
             try:
-                if asyncio.iscoroutinefunction(node.action):
-                    result = await node.action(data)
+                if asyncio.iscoroutinefunction(node.func):
+                    result = await node.func(data)
                 else:
-                    result = node.action(data)
+                    result = node.func(data)
                 return result
             except Exception as e:
                 attempt += 1

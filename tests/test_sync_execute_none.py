@@ -2,26 +2,27 @@ import pytest
 import asyncio
 from dataclasses import dataclass
 from typing import Optional, Any
+
+from src.workflow_graph.models import State
 from src.workflow_graph import WorkflowGraph, START, END
 
 @dataclass
-class TestState:
+class TestState(State[Any]):
+    """Test state class for testing workflow execution."""
     value: Any
-    result: Optional[Any] = None
 
 # Define an async node that explicitly returns None
 async def async_node_returns_none(state: TestState) -> TestState:
     print(f"Executing async_node_returns_none with state: {state}")
     await asyncio.sleep(0.01) # Simulate async work
-    # Return a new state with None result
-    return TestState(value=state.value, result=None)
+    # Return a new state with None value
+    return TestState(value=None)
 
 # Define a simple node to follow
-def final_node(state: TestState) -> TestState:
-    print(f"Executing final_node with state: {state}")
+def output_node(state: TestState) -> TestState:
+    print(f"Executing output_node with state: {state}")
     return TestState(
-        value=state.value,
-        result=f"Final result with input: {state.result}"
+        value=f"Final result with input: {state.value.value if isinstance(state.value, State) else state.value}"
     )
 
 # Define an async error handler that returns None (for a different test)
@@ -40,14 +41,14 @@ async def async_node_raises_error(state: TestState) -> TestState:
 def test_sync_execute_with_async_node_returning_none():
     """
     Tests that graph.execute() (sync) works correctly when an intermediate
-    async node returns a state with None result.
+    async node returns a state with None value.
     """
     graph = WorkflowGraph()
-    graph.add_node("start_node", async_node_returns_none)
-    graph.add_node("end_node", final_node)
-    graph.add_edge(START, "start_node")
-    graph.add_edge("start_node", "end_node")
-    graph.add_edge("end_node", END)
+    graph.add_node("async_node_returns_none", async_node_returns_none)
+    graph.add_node("output_node", output_node)
+    graph.add_edge(START, "async_node_returns_none")
+    graph.add_edge("async_node_returns_none", "output_node")
+    graph.add_edge("output_node", END)
 
     print("\nTesting synchronous execute with async node returning None...")
     # Execute synchronously
@@ -55,10 +56,9 @@ def test_sync_execute_with_async_node_returning_none():
     result = graph.execute(initial_state)
 
     # Assert the expected final result
-    # The final_node should receive a state with None result
+    # The output_node should receive a state with None value
     assert isinstance(result, TestState)
-    assert result.value == "test_input"
-    assert result.result == "Final result with input: None"
+    assert result.value == "Final result with input: None"
     print("Synchronous execute with async node returning None finished successfully.")
 
 def test_sync_execute_with_failing_async_node_and_async_none_handler():
@@ -73,7 +73,7 @@ def test_sync_execute_with_failing_async_node_and_async_none_handler():
         on_error=async_error_handler_returns_none,
         retries=0 # No retries
     )
-    graph.add_node("next_node", final_node) # This node might be skipped if handler returns None
+    graph.add_node("next_node", output_node) # This node might be skipped if handler returns None
 
     graph.add_edge(START, "failing_node")
     # If error handler returns a value, it goes to the next node

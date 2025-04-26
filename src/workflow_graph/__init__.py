@@ -7,7 +7,7 @@ and execute them with proper error handling and retries.
 from .builder import WorkflowGraph
 from .constants import START, END
 from .executor import CompiledGraph
-from .models import Branch, NodeSpec
+from .models import Branch, Node, State
 from .exceptions import (
     WorkflowGraphError,
     InvalidNodeNameError,
@@ -20,8 +20,9 @@ from .exceptions import (
 __all__ = [
     "WorkflowGraph",
     "CompiledGraph",
-    "NodeSpec",
+    "Node",
     "Branch",
+    "State",
     "START",
     "END",
     "WorkflowGraphError",

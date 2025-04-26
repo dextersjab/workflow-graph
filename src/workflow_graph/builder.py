@@ -15,7 +15,7 @@ from typing import (
 from collections import deque
 
 from .constants import START, END
-from .models import Branch, NodeSpec
+from .models import Branch, Node
 from .executor import CompiledGraph
 from .exceptions import (
     InvalidNodeNameError,
@@ -37,7 +37,7 @@ class WorkflowGraph:
     
     def __init__(self) -> None:
         """Initialize a new workflow graph builder."""
-        self.nodes: dict[str, NodeSpec] = {}
+        self.nodes: dict[str, Node] = {}
         self.edges = set[tuple[str, str]]()
         self.branches: defaultdict[str, dict[str, Branch]] = defaultdict(dict)
         self.compiled = False
@@ -49,83 +49,36 @@ class WorkflowGraph:
 
     def add_node(
         self,
-        node: str | Callable,
-        action: Callable | None = None,
-        *,
-        metadata: dict[str, Any] | None = None,
+        name: str,
+        func: Callable[[Any], Any],
+        callback: Callable[[Any], None] | None = None,
+        on_error: Callable[[Exception, Any], Any] | None = None,
         retries: int = 0,
-        retry_delay: float = 0.5,
-        backoff_factor: float | None = None,
-        on_error: Callable[[Exception], Any] | None = None,
-        callback: Callable[[], None] | None = None,
-    ) -> None:
-        """Add a node to the workflow graph.
+        retry_delay: float = 0,
+        backoff_factor: float = 0,
+        metadata: dict[str, Any] | None = None,
+        input_type: type | None = None,
+        output_type: type | None = None,
+    ) -> "WorkflowGraph":
+        """Add a node to the workflow graph."""
+        if name in [START, END]:
+            raise ValueError(f"Node name '{name}' is reserved")
+        if name in self.nodes:
+            raise ValueError(f"Node '{name}' already exists")
         
-        Args:
-            node: Node name or callable action
-            action: The function to execute at this node (required if node is a string)
-            metadata: Optional metadata for the node
-            retries: Number of retry attempts if the node action fails
-            retry_delay: Delay between retry attempts in seconds
-            backoff_factor: Optional multiplier for exponential backoff (e.g., 2 for doubling)
-            on_error: Optional error handler function
-            callback: Optional callback function to execute after the node action
-            
-        Raises:
-            ValueError: If node validation fails
-        """
-        def extract_type_hints(fn: Callable) -> tuple[type | None, type | None]:
-            try:
-                hints = get_type_hints(fn)
-                params = list(hints.items())
-                input_type = params[0][1] if params and params[0][0] != 'return' else None
-                output_type = hints.get('return')
-                return input_type, output_type
-            except Exception:
-                return None, None
-
-        if isinstance(node, str):
-            if action is None:
-                raise ValueError("Action must be provided when node is a string")
-            if node in (START, END):
-                raise InvalidNodeNameError(f"Node `{node}` is reserved.")
-            if node in self.nodes:
-                raise DuplicateNodeError(f"Node `{node}` already present.")
-            input_type, output_type = extract_type_hints(action)
-            self.nodes[node] = NodeSpec(
-                name=node,
-                action=action,
-                metadata=metadata,
-                input_type=input_type,
-                output_type=output_type,
-                retry_count=retries,
-                retry_delay=retry_delay,
-                backoff_factor=backoff_factor,
-                error_handler=on_error,
-                callback=callback,
-            )
-        elif callable(node):
-            action = node
-            node_name = getattr(node, "__name__", None)
-            if node_name is None:
-                raise ValueError("Cannot determine name of the node")
-            if node_name in self.nodes:
-                raise DuplicateNodeError(f"Node `{node_name}` already present.")
-            if node_name in (START, END):
-                raise InvalidNodeNameError(f"Node `{node_name}` is reserved.")
-            input_type, output_type = extract_type_hints(action)
-            self.nodes[node_name] = NodeSpec(
-                name=node_name,
-                action=node,
-                metadata=metadata,
-                input_type=input_type,
-                output_type=output_type,
-                retry_count=retries,
-                retry_delay=retry_delay,
-                backoff_factor=backoff_factor,
-                error_handler=on_error,
-                callback=callback,
-            )
+        self.nodes[name] = Node(
+            name=name,
+            func=func,
+            callback=callback,
+            error_handler=on_error,
+            retries=retries,
+            retry_delay=retry_delay,
+            backoff_factor=backoff_factor,
+            metadata=metadata or {},
+            input_type=input_type,
+            output_type=output_type,
+        )
+        return self
 
     def add_edge(self, start_key: str, end_key: str) -> None:
         """Add a directed edge between two nodes.
@@ -173,17 +126,15 @@ class WorkflowGraph:
     def add_conditional_edges(
         self,
         source: str,
-        path: Callable[[Any], Hashable | list[Hashable]],
-        path_map: dict[Hashable, str] | list[str] | None = None,
-        then: str | None = None,
+        condition: Callable[[Any], Any],
+        path_map: dict[Any, str] | None = None,
     ) -> None:
         """Add conditional edges from a source node.
         
         Args:
             source: Source node name
-            path: Function that determines the branch path
-            path_map: Mapping of path values to destination node names
-            then: Optional default destination node
+            condition: Function that determines the branch path
+            path_map: Mapping of condition values to destination node names
             
         Raises:
             ValueError: If a branch with the same name already exists
@@ -193,25 +144,28 @@ class WorkflowGraph:
                 "Adding an edge to a graph that has already been compiled. This will "
                 "not be reflected in the compiled graph."
             )
-        if isinstance(path_map, dict):
-            path_map = path_map.copy()
-        elif isinstance(path_map, list):
-            path_map = {name: name for name in path_map}
-        else:
-            try:
-                rtn_type = get_type_hints(path).get("return")
-                if get_origin(rtn_type) is Literal:
-                    path_map = {name: name for name in get_args(rtn_type)}
-            except Exception:
-                pass
-
-        name = getattr(path, "__name__", "condition")
+        
+        # Validate source node
+        if source not in self.nodes and source != START:
+            raise ValueError(f"Source node '{source}' does not exist")
+        
+        # Get branch name from condition function
+        name = getattr(condition, "__name__", "condition")
         if name in self.branches[source]:
             raise ValueError(
                 f"Branch with name `{name}` already exists for node `{source}`"
             )
-        self.branches[source][name] = Branch(path, path_map, then)
-
+        
+        # Create branch with condition
+        branch = Branch(
+            source=source,
+            branch_id=name,
+            condition=condition,
+            ends=path_map
+        )
+        
+        # Add branch to graph
+        self.branches[source][name] = branch
 
     def validate(self) -> None:
         """Validate the graph structure."""
@@ -226,7 +180,7 @@ class WorkflowGraph:
         # Check for at least one finish point
         has_finish_edge = any(dst == END for _, dst in self.edges)
         has_conditional_finish = any(
-            (branch.then == END or (branch.ends and END in branch.ends.values()))
+            END in branch.ends.values() if branch.ends else False
             for branches in self.branches.values()
             for branch in branches.values()
         )
@@ -256,8 +210,6 @@ class WorkflowGraph:
                 # Add all nodes reachable from branches
                 if node in self.branches:
                     for branch in self.branches[node].values():
-                        if branch.then and branch.then != END:
-                            queue.append(branch.then)
                         if branch.ends:
                             for dest in branch.ends.values():
                                 if dest != END:
@@ -295,8 +247,6 @@ class WorkflowGraph:
             # Check branches
             if node in self.branches:
                 for branch in self.branches[node].values():
-                    if branch.then and branch.then != END and visit(branch.then):
-                        return True
                     if branch.ends:
                         for dest in branch.ends.values():
                             if dest != END and visit(dest):
@@ -329,7 +279,7 @@ class WorkflowGraph:
         # Check for at least one finish point (edge to END)
         has_finish_edge = any(dst == END for _, dst in self._all_edges)
         has_conditional_finish = any(
-            (branch.then == END or (branch.ends and END in branch.ends.values()))
+            END in branch.ends.values() if branch.ends else False
             for branches in self.branches.values()
             for branch in branches.values()
         )
@@ -351,12 +301,9 @@ class WorkflowGraph:
 
             # Add entry points from conditional branches starting at START
             if START in self.branches:
-                for branch_id, branch in self.branches[START].items():
-                    if branch.then and branch.then != END:
-                        if branch.then not in queue:
-                             queue.append(branch.then)
+                for _branch_id, branch in self.branches[START].items():
                     if branch.ends:
-                        for path_val, dest in branch.ends.items():
+                        for _path_val, dest in branch.ends.items():
                             if dest != END:
                                 if dest not in queue:
                                      queue.append(dest)
@@ -378,10 +325,7 @@ class WorkflowGraph:
 
                 # Add nodes reachable from conditional branches
                 if node in self.branches:
-                    for branch_id, branch in self.branches[node].items():
-                        if branch.then and branch.then != END:
-                            if branch.then not in visited:
-                                queue.append(branch.then)
+                    for _branch_id, branch in self.branches[node].items():
                         if branch.ends:
                             for path_val, dest in branch.ends.items():
                                 if dest != END:

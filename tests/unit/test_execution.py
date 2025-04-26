@@ -36,7 +36,7 @@ def test_simple_workflow_execution(graph):
 
 def test_conditional_workflow_execution(graph):
     """Test execution of a workflow with conditional branches."""
-    def is_even(state: TestState) -> bool:
+    def check_even(state: TestState) -> bool:
         return state.value % 2 == 0
 
     def add_one(state: TestState) -> TestState:
@@ -52,15 +52,15 @@ def test_conditional_workflow_execution(graph):
         )
 
     # Add nodes
-    graph.add_node("check", is_even)
+    graph.add_node("check", check_even)
     graph.add_node("add", add_one)
     graph.add_node("multiply", multiply_by_two)
 
     graph.add_edge(START, "check")
     graph.add_conditional_edges(
         "check",
-        is_even,
-        {True: "add", False: "multiply"}
+        check_even,
+        path_map={"True": "add", "False": "multiply"}
     )
     graph.add_edge("add", END)
     graph.add_edge("multiply", END)
@@ -132,21 +132,21 @@ def test_callback_execution(graph):
         )
     
     # Node-specific callbacks that will stream results to the client
-    def process_callback():
+    def process_callback(result: TestState):
         streaming_results.append({
             "node": "process",
             "value": process_data.last_result,
             "timestamp": "2024-01-01T00:00:00Z"
         })
     
-    def analyze_callback():
+    def analyze_callback(result: TestState):
         streaming_results.append({
             "node": "analyze",
             "value": analyze_result.last_result,
             "timestamp": "2024-01-01T00:00:00Z"
         })
     
-    def format_callback():
+    def format_callback(result: TestState):
         streaming_results.append({
             "node": "format",
             "value": format_output.last_result,
@@ -174,4 +174,4 @@ def test_callback_execution(graph):
     assert len(streaming_results) == 3
     assert streaming_results[0] == {"node": "process", "value": 50, "timestamp": "2024-01-01T00:00:00Z"}
     assert streaming_results[1] == {"node": "analyze", "value": 55, "timestamp": "2024-01-01T00:00:00Z"}
-    assert streaming_results[2] == {"node": "format", "value": 110, "timestamp": "2024-01-01T00:00:00Z"} 
+    assert streaming_results[2] == {"node": "format", "value": 110, "timestamp": "2024-01-01T00:00:00Z"}

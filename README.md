@@ -1,278 +1,205 @@
-# WorkflowGraph
+# Workflow Graph
 
-**WorkflowGraph** is a lightweight, self-contained Python library for building and executing directed graph workflows. It's an alternative to **LangGraph** for those seeking independence from LangChain and the flexibility to implement agent workflows, while still enabling real-time streaming of results.
+A Python library for building and executing directed acyclic graphs (DAGs) of operations, with support for both synchronous and asynchronous execution.
 
-The JavaScript-version is available at [https://github.com/dextersjab/workflow-graph.js]().
+> **BREAKING CHANGES WARNING**: Version 0.3.0 introduced significant API changes. Please review the documentation carefully when upgrading from earlier versions.
 
 ## Features
 
-- **Graph-based workflows**: Build flexible, directed workflows where nodes are customizable tasks.
-- **Synchronous & asynchronous support**: Define both sync and async nodes without any external dependencies.
-- **Real-time streaming**: Built-in support for callbacks in each node, allowing real-time token streaming (e.g., for WebSockets).
-- **LangGraph alternative**: Unlike LangGraph, WorkflowGraph provides a simpler, fully self-contained solution without needing LangChain for streaming.
-- **Modular architecture**: Organized into separate modules for better maintainability and extensibility.
-- **State-based workflow management**: Support for state-based workflows where each node receives and returns a state object.
+- **Type-Safe Workflows**: Built-in type validation ensures type consistency throughout the workflow
+- **Async Support**: Native support for asynchronous operations and coroutines
+- **Error Handling**: Configurable error handling and retry policies
+- **Branching Logic**: Support for conditional branches with async conditions
+- **State Management**: Proper state persistence between nodes
+- **Callback Support**: Configurable callbacks for monitoring execution progress
+- **Generic Types**: Support for generic types in workflow state
 
 ## Installation
 
-### From PyPI (Recommended)
-
-```shell
+```bash
 pip install workflow-graph
 ```
 
-### Latest Alpha/Beta Version
+## Usage
 
-```shell
-pip install workflow-graph --pre
+### Basic Workflow
+
+```python
+from workflow_graph import WorkflowGraph, START, END
+from dataclasses import dataclass
+
+@dataclass
+class State:
+    value: int
+    result: int = None
+
+def add_one(state: State) -> State:
+    return State(value=state.value, result=state.value + 1)
+
+def multiply_by_two(state: State) -> State:
+    return State(value=state.value, result=state.result * 2)
+
+graph = WorkflowGraph()
+graph.add_node("add", add_one)
+graph.add_node("multiply", multiply_by_two)
+graph.add_edge(START, "add")
+graph.add_edge("add", "multiply")
+graph.add_edge("multiply", END)
+
+initial_state = State(value=1)
+result = graph.execute(initial_state)
+assert result.result == 4  # (1 + 1) * 2 = 4
 ```
 
-> **Note**: The alpha/beta versions may include breaking changes as the API stabilizes.
-
-### From GitHub
-
-Add the following line to your `requirements.txt`:
-
-```
-git+https://github.com/dextersjab/workflow-graph.git@main
-```
-
-Then, run:
-
-```shell
-pip install -r requirements.txt
-```
-
-Or install directly using pip:
-
-```shell
-pip install git+https://github.com/dextersjab/workflow-graph.git@main
-```
-
-## Basic Usage
-
-### Implementing a State-Based Workflow
-
-Here's how to create a workflow using state management:
+### Async Workflow
 
 ```python
 import asyncio
-from dataclasses import dataclass
-from typing import Optional, List
 from workflow_graph import WorkflowGraph, START, END
 
-# Define your state class
-@dataclass
-class WorkflowState:
-    input_value: int
-    current_value: Optional[int] = None
-    is_even: Optional[bool] = None
-    result: Optional[str] = None
-    errors: List[str] = None
+async def async_operation(state: State) -> State:
+    await asyncio.sleep(0.1)
+    return State(value=state.value, result=state.value + 1)
 
-    def __post_init__(self):
-        if self.errors is None:
-            self.errors = []
-
-# Define task functions that work with state
-def add(state: WorkflowState, callback=None) -> WorkflowState:
-    result = state.input_value + 1
-    if callback:
-        callback(f"Added 1: {state.input_value} -> {result}")
-    return WorkflowState(
-        input_value=state.input_value,
-        current_value=result,
-        errors=state.errors
-    )
-
-def is_even(state: WorkflowState) -> bool:
-    return state.current_value % 2 == 0
-
-def handle_even(state: WorkflowState, callback=None) -> WorkflowState:
-    result = f"Even: {state.current_value}"
-    if callback:
-        callback(result)
-    return WorkflowState(
-        input_value=state.input_value,
-        current_value=state.current_value,
-        is_even=True,
-        result=result,
-        errors=state.errors
-    )
-
-def handle_odd(state: WorkflowState, callback=None) -> WorkflowState:
-    result = f"Odd: {state.current_value}"
-    if callback:
-        callback(result)
-    return WorkflowState(
-        input_value=state.input_value,
-        current_value=state.current_value,
-        is_even=False,
-        result=result,
-        errors=state.errors
-    )
-
-# Create and configure the workflow graph
 graph = WorkflowGraph()
+graph.add_node("async_op", async_operation)
+graph.add_edge(START, "async_op")
+graph.add_edge("async_op", END)
 
-# Add nodes
-graph.add_node("addition", add)
-graph.add_node("is_even_check", is_even)
-graph.add_node("even_handler", handle_even)
-graph.add_node("odd_handler", handle_odd)
+initial_state = State(value=1)
+result = await graph.execute_async(initial_state)
+assert result.result == 2
+```
 
-# Define starting point using add_edge
-graph.add_edge(START, "addition")
+### Conditional Branches
 
-# Define flow between nodes
-graph.add_edge("addition", "is_even_check")
+```python
+def is_even(state: State) -> bool:
+    return state.value % 2 == 0
 
-# Add conditional branching based on is_even_check result
+def process_even(state: State) -> State:
+    return State(value=state.value, result=state.value * 2)
+
+def process_odd(state: State) -> State:
+    return State(value=state.value, result=state.value + 1)
+
+graph = WorkflowGraph()
+graph.add_node("check", is_even)
+graph.add_node("even", process_even)
+graph.add_node("odd", process_odd)
+
+graph.add_edge(START, "check")
 graph.add_conditional_edges(
-    "is_even_check", 
-    path=is_even, 
-    path_map={True: "even_handler", False: "odd_handler"}
+    "check",
+    is_even,
+    {True: "even", False: "odd"}
 )
+graph.add_edge("even", END)
+graph.add_edge("odd", END)
 
-# Set endpoints using add_edge
-graph.add_edge("even_handler", END)
-graph.add_edge("odd_handler", END)
+# Test with even number
+result = graph.execute(State(value=2))
+assert result.result == 4  # 2 * 2 = 4
 
-# Compile the graph
-compiled_graph = graph.compile()
-
-# Execute the workflow
-async def run_workflow(input_value):
-    initial_state = WorkflowState(input_value=input_value)
-    result = await compiled_graph.execute_async(initial_state, callback=print)
-    print(f"Final Result: {result.result}")
-
-# Run the workflow with different inputs
-asyncio.run(run_workflow(5))  # Will output: "Even: 6"
-asyncio.run(run_workflow(6))  # Will output: "Odd: 7"
+# Test with odd number
+result = graph.execute(State(value=3))
+assert result.result == 4  # 3 + 1 = 4
 ```
 
-This example creates a workflow that:
-1. Takes a number as input and wraps it in a state object
-2. Adds 1 to it, updating the state
-3. Checks if the result is even
-4. Branches to different handlers based on the result, each updating the state
-5. Returns the final state with the result
-
-```mermaid
-stateDiagram-v2
-    [*] --> addition
-    addition --> is_even_check
-    is_even_check --> even_handler: true
-    is_even_check --> odd_handler: false
-    even_handler --> [*]
-    odd_handler --> [*]
-```
-
-### Error Handling and Retries
-
-WorkflowGraph supports built-in error handling and retry capabilities:
+### Error Handling
 
 ```python
-def make_api_request(state: WorkflowState) -> WorkflowState:
-    try:
-        # Make API request
-        result = api_client.get_data(state.input_value)
-        return WorkflowState(
-            input_value=state.input_value,
-            result=result,
-            errors=state.errors
-        )
-    except Exception as e:
-        state.errors.append(str(e))
-        raise
+def failing_operation(state: State) -> State:
+    raise ValueError("Operation failed")
 
-def handle_api_error(state: WorkflowState) -> WorkflowState:
-    return WorkflowState(
-        input_value=state.input_value,
-        result="Error occurred",
-        errors=state.errors
-    )
+def error_handler(error: Exception, state: State) -> State:
+    return State(value=state.value, result=-1)
 
+graph = WorkflowGraph()
 graph.add_node(
-    "api_call", 
-    make_api_request, 
-    retries=3,                   # Retry up to 3 times on failure
-    backoff_factor=0.5,          # Wait 0.5 seconds × attempt before retrying
-    on_error=handle_api_error    # Call this function if all retries fail
+    "failing_op",
+    failing_operation,
+    retries=2,
+    backoff_factor=0.1,
+    on_error=error_handler
 )
+graph.add_edge(START, "failing_op")
+graph.add_edge("failing_op", END)
+
+result = graph.execute(State(value=1))
+assert result.result == -1
 ```
 
-## Execution Methods
-
-Once your workflow is defined, there are two ways to execute it:
-
-### Direct Execution (Simple)
-
-For one-time executions, use the direct execution approach:
+### Callbacks
 
 ```python
-# Execute synchronously
-initial_state = WorkflowState(input_value=5)
-result = graph.execute(initial_state)
+def process_data(state: State) -> State:
+    return State(value=state.value, result=state.value * 10)
 
-# Or execute asynchronously with a callback
-result = await graph.execute_async(initial_state, callback=some_callback)
+def callback(result: State):
+    print(f"Processed result: {result.result}")
+
+graph = WorkflowGraph()
+graph.add_node("process", process_data, callback=callback)
+graph.add_edge(START, "process")
+graph.add_edge("process", END)
+
+graph.execute(State(value=5))  # Prints: Processed result: 50
 ```
 
-### Compile-then-Execute (More Efficient for Multiple Executions)
-
-For workflows that will be executed multiple times, compile once and reuse:
+### Generic Types
 
 ```python
-# Compile the graph
-compiled_graph = graph.compile()
+from typing import Generic, TypeVar
 
-async def run_workflow(input_value):
-    initial_state = WorkflowState(input_value=input_value)
-    result = await compiled_graph.execute_async(
-        initial_state, 
-        callback=lambda msg: print(f"Progress update: {msg}")
-    )
-    print(f"Final Result: {result.result}")
+T = TypeVar('T')
 
-# Run the workflow with different inputs
-asyncio.run(run_workflow(5))
-asyncio.run(run_workflow(10))
+@dataclass
+class GenericState(Generic[T]):
+    value: T
+    result: T = None
+
+def process_int(state: GenericState[int]) -> GenericState[int]:
+    return GenericState(value=state.value, result=state.value + 1)
+
+def process_str(state: GenericState[str]) -> GenericState[str]:
+    return GenericState(value=state.value, result=state.value + " processed")
+
+# Create separate graphs for different types
+int_graph = WorkflowGraph()
+int_graph.add_node("process", process_int)
+int_graph.add_edge(START, "process")
+int_graph.add_edge("process", END)
+
+str_graph = WorkflowGraph()
+str_graph.add_node("process", process_str)
+str_graph.add_edge(START, "process")
+str_graph.add_edge("process", END)
+
+# Execute with correct types
+int_result = int_graph.execute(GenericState[int](value=1))
+assert int_result.result == 2
+
+str_result = str_graph.execute(GenericState[str](value="test"))
+assert str_result.result == "test processed"
 ```
 
-## Generating Mermaid Diagrams
+## Improvements
 
-WorkflowGraph includes built-in support for generating [Mermaid.js](https://mermaid.js.org/) diagrams to visualize your workflow:
+The latest version includes several important improvements:
 
-```python
-# Generate Mermaid diagram code
-mermaid_code = graph.to_mermaid()
-print(mermaid_code)
-```
+1. **Coroutine Handling**: Proper handling of coroutines returned by nodes
+2. **State Management**: Improved state persistence between nodes
+3. **Error Handling**: Better error propagation and handling
+4. **Type Validation**: Enhanced type checking for START and END nodes
+5. **Callback Timing**: Callbacks are now called at the correct time in the execution flow
+6. **Branch Handling**: Improved handling of async conditions in branches
+7. **Documentation**: Updated examples to match actual implementation
 
-The generated diagram uses dashed lines (`-.->`), rather than decision nodes, to represent conditional branches. This provides a cleaner and more accurate representation of how the workflow behaves.
+## Contributing
 
-Mermaid diagrams can be rendered in:
-- GitHub Markdown (just paste the code)
-- VS Code (with the Mermaid extension)
-- Web browsers (using the Mermaid Live Editor)
-- Many other tools that support Mermaid
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Package Structure
+## License
 
-The library is organized into the following modules:
-
-- **workflow_graph**: Main package
-- **constants.py**: Defines constants like START and END
-- **models.py**: Defines data structures like NodeSpec and Branch
-- **builder.py**: Contains the WorkflowGraph class for building graphs
-- **executor.py**: Contains the CompiledGraph class for executing workflows
-- **exceptions.py**: Contains custom exceptions for better error handling
-- **README.md**: Contains detailed documentation about the package internals
-
-For backward compatibility, a top-level `workflow_graph.py` file is also provided that re-exports all the public API.
-
-> **Note**:
-> - For more technical details about the package internals, refer to the [src/workflow_graph/README.md](src/workflow_graph/README.md) file.
-> - This project is largely AI-generated
+This project is licensed under the MIT License - see the LICENSE file for details.
