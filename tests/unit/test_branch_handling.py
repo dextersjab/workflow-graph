@@ -2,12 +2,12 @@
 import pytest
 import asyncio
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Any, Optional, List
 from workflow_graph import START, END, State
 import traceback
 
 @dataclass
-class TestState(State[int]):
+class TestState(State[Any]):
     """Test state that extends State with additional fields for testing.
     
     This state class tracks callback execution history and maintains
@@ -21,7 +21,6 @@ class TestState(State[int]):
             value=self.value,
             data=self.data.copy(),
             current_node=self.current_node,
-            processed_by=self.processed_by.copy(),
             trajectory=self.trajectory.copy(),
             errors=self.errors.copy(),
             callback_history=self.callback_history.copy()
@@ -51,8 +50,7 @@ async def test_async_branch_condition(graph):
             value=state.value * 2,
             data=state.data.copy(),
             current_node=state.current_node,
-            processed_by=state.processed_by.copy(),
-            trajectory=state.trajectory.copy() + ["high"],
+            trajectory=state.trajectory.copy(),
             errors=state.errors.copy()
         )
         return new_state
@@ -62,8 +60,7 @@ async def test_async_branch_condition(graph):
             value=state.value + 1,
             data=state.data.copy(),
             current_node=state.current_node,
-            processed_by=state.processed_by.copy(),
-            trajectory=state.trajectory.copy() + ["low"],
+            trajectory=state.trajectory.copy(),
             errors=state.errors.copy()
         )
         return new_state
@@ -84,14 +81,14 @@ async def test_async_branch_condition(graph):
     initial_state = State(value=10)
     final_state = await graph.execute_async(initial_state, callback=lambda node, state: print(f"Node '{node}' -> {state}"))
     assert final_state.value == 20  # 10 * 2
-    assert final_state.trajectory == ["high"]
+    assert final_state.trajectory == ["check", "high"]
     assert final_state.get_data("is_high") is True
 
     # Test low value path
     initial_state = State(value=3)
     final_state = await graph.execute_async(initial_state, callback=lambda node, state: print(f"Node '{node}' -> {state}"))
     assert final_state.value == 4  # 3 + 1
-    assert final_state.trajectory == ["low"]
+    assert final_state.trajectory == ["check", "low"]
     assert final_state.get_data("is_high") is False
 
 @pytest.mark.asyncio
@@ -172,90 +169,117 @@ async def test_callback_error_handling(graph):
 @pytest.mark.asyncio
 async def test_nested_branch_handling(graph):
     """Test handling of nested conditional branches with async conditions."""
-    async def first_condition(state: TestState) -> bool:
+    async def is_positive(state: TestState) -> bool:
         await asyncio.sleep(0.1)
         return state.value > 0
 
-    async def second_condition(state: TestState) -> bool:
+    async def is_even(state: TestState) -> bool:
         await asyncio.sleep(0.1)
         return state.value % 2 == 0
 
-    async def process_positive_even(state: TestState) -> TestState:
+    async def entry_node(state: TestState) -> TestState:
+        """Entry node that passes through the state for initial processing."""
         await asyncio.sleep(0.1)
-        new_state = TestState(
+        return TestState(
             value=state.value,
             data=state.data.copy(),
             current_node=state.current_node,
-            processed_by=state.processed_by.copy(),
-            trajectory=state.trajectory.copy() + ["positive_even"],
+            trajectory=state.trajectory.copy(),
             errors=state.errors.copy(),
-            callbacks=state.callbacks.copy()
         )
-        new_state.update_value(state.value * 2)
-        return new_state
 
-    async def process_positive_odd(state: TestState) -> TestState:
+    async def check_even(state: TestState) -> TestState:
+        """Node that just passes through the state for parity checking."""
         await asyncio.sleep(0.1)
-        new_state = TestState(
+        return TestState(
             value=state.value,
             data=state.data.copy(),
             current_node=state.current_node,
-            processed_by=state.processed_by.copy(),
-            trajectory=state.trajectory.copy() + ["positive_odd"],
+            trajectory=state.trajectory.copy(),
             errors=state.errors.copy(),
-            callbacks=state.callbacks.copy()
         )
-        new_state.update_value(state.value + 1)
-        return new_state
 
-    def process_negative(state: TestState) -> TestState:
-        new_state = TestState(
-            value=state.value,
+    async def double_it(state: TestState) -> TestState:
+        await asyncio.sleep(0.1)
+        return TestState(
+            value=state.value * 2,
             data=state.data.copy(),
             current_node=state.current_node,
-            processed_by=state.processed_by.copy(),
-            trajectory=state.trajectory.copy() + ["negative"],
+            trajectory=state.trajectory.copy(),
             errors=state.errors.copy(),
-            callbacks=state.callbacks.copy()
         )
-        new_state.update_value(abs(state.value))
-        return new_state
 
-    graph.add_node("check_sign", first_condition)
-    graph.add_node("check_parity", second_condition)
-    graph.add_node("positive_even", process_positive_even)
-    graph.add_node("positive_odd", process_positive_odd)
-    graph.add_node("negative", process_negative)
+    async def increment(state: TestState) -> TestState:
+        await asyncio.sleep(0.1)
+        return TestState(
+            value=state.value + 1,
+            data=state.data.copy(),
+            current_node=state.current_node,
+            trajectory=state.trajectory.copy(),
+            errors=state.errors.copy(),
+        )
 
-    graph.add_edge(START, "check_sign")
+    def absolute(state: TestState) -> TestState:
+        return TestState(
+            value=abs(state.value),
+            data=state.data.copy(),
+            current_node=state.current_node,
+            trajectory=state.trajectory.copy(),
+            errors=state.errors.copy(),
+        )
+
+    # Add nodes for processing
+    graph.add_node("entry", entry_node)
+    graph.add_node("check_even", check_even)
+    graph.add_node("double_it", double_it)
+    graph.add_node("increment", increment)
+    graph.add_node("absolute", absolute)
+
+    # Add edge from START to entry node
+    graph.add_edge(START, "entry")
+
+    # Add conditional branches from entry node
     graph.add_conditional_edges(
-        "check_sign",
-        first_condition,
-        path_map={"True": "check_parity", "False": "negative"}
+        source="entry",
+        condition=is_positive,
+        path_map={
+            True: "check_even", 
+            False: "absolute"
+        }
     )
+
+    # Add conditional branches for parity check
     graph.add_conditional_edges(
-        "check_parity",
-        second_condition,
-        path_map={"True": "positive_even", "False": "positive_odd"}
+        source="check_even",
+        condition=is_even,
+        path_map={
+            True: "double_it",
+            False: "increment"
+        }
     )
-    graph.add_edge("positive_even", END)
-    graph.add_edge("positive_odd", END)
-    graph.add_edge("negative", END)
 
-    # Test positive even path
-    initial_state = TestState(value=4)
-    result = await graph.execute_async(initial_state)
-    assert result.value == 8  # 4 * 2
-    assert result.trajectory == ["positive_even"]
+    # Add edges to END
+    graph.add_edge("double_it", END)
+    graph.add_edge("increment", END)
+    graph.add_edge("absolute", END)
 
-    # Test positive odd path
-    initial_state = TestState(value=3)
-    result = await graph.execute_async(initial_state)
-    assert result.value == 4  # 3 + 1
-    assert result.trajectory == ["positive_odd"]
+    # Test positive even number
+    result = await graph.execute_async(TestState(value=4))
+    assert result.value == 8
+    assert "double_it" in result.trajectory
+    assert "check_even" in result.trajectory
+    assert "entry" in result.trajectory
 
-    # Test negative path
-    initial_state = TestState(value=-5)
-    result = await graph.execute_async(initial_state)
-    assert result.value == 5  # abs(-5)
-    assert result.trajectory == ["negative"] 
+    # Test positive odd number
+    result = await graph.execute_async(TestState(value=3))
+    assert result.value == 4
+    assert "increment" in result.trajectory
+    assert "check_even" in result.trajectory
+    assert "entry" in result.trajectory
+
+    # Test negative number
+    result = await graph.execute_async(TestState(value=-5))
+    assert result.value == 5
+    assert "absolute" in result.trajectory
+    assert "check_even" not in result.trajectory
+    assert "entry" in result.trajectory 

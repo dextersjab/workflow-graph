@@ -58,7 +58,20 @@ class WorkflowGraph(Generic[T]):
         input_type: type | None = None,
         output_type: type | None = None,
     ) -> "WorkflowGraph":
-        """Add a node to the workflow graph."""
+        """Add a node to the workflow graph.
+        
+        Args:
+            name: Name of the node
+            func: Function to execute for this node
+            callback: Optional callback function
+            on_error: Optional error handler
+            retries: Number of retries on failure
+            retry_delay: Delay between retries
+            backoff_factor: Exponential backoff factor
+            metadata: Optional metadata for the node
+            input_type: Expected input type
+            output_type: Expected output type
+        """
         if name in [START, END]:
             raise ValueError(f"Node name '{name}' is reserved")
         if name in self.nodes:
@@ -166,6 +179,7 @@ class WorkflowGraph(Generic[T]):
             
         Raises:
             ValueError: If a branch with the same name already exists
+            InvalidEdgeError: If trying to add conditional edges from START
         """
         if self.compiled:
             logger.warning(
@@ -174,7 +188,17 @@ class WorkflowGraph(Generic[T]):
             )
         
         # Validate source node
-        if source not in self.nodes and source != START:
+        if source == START:
+            raise InvalidEdgeError(
+                "Cannot add conditional edges directly from START. "
+                "Add an explicit entry node first (e.g., 'init' or 'entry') and branch from there. "
+                "Example:\n"
+                "  graph.add_node('entry', entry_func)\n"
+                "  graph.add_edge(START, 'entry')\n"
+                "  graph.add_conditional_edges('entry', condition, path_map)"
+            )
+        
+        if source not in self.nodes:
             raise ValueError(f"Source node '{source}' does not exist")
         
         # Get branch name from condition function
@@ -183,6 +207,17 @@ class WorkflowGraph(Generic[T]):
             raise ValueError(
                 f"Branch with name `{name}` already exists for node `{source}`"
             )
+        
+        # Validate condition function returns a hashable value
+        return_annotation = inspect.signature(condition).return_annotation
+        if return_annotation != inspect.Signature.empty:
+            try:
+                hash(return_annotation())
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"Branch condition function '{name}' must return a hashable value "
+                    f"(bool, str, int, float, tuple, or frozenset), got {return_annotation}"
+                )
         
         # Create branch with condition
         branch = Branch(

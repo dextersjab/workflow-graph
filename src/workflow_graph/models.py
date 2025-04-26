@@ -13,14 +13,12 @@ class State(Generic[T]):
         value: The current value being processed through the workflow
         data: Dictionary of node-specific data that can be read/written by nodes
         current_node: Name of the current node being executed
-        processed_by: List of nodes that have processed this state
-        trajectory: List of branches taken during execution
+        trajectory: List of nodes traversed during execution
         errors: List of errors encountered during execution
     """
     value: T | None
     data: dict[str, Any] = field(default_factory=dict)
     current_node: str | None = None
-    processed_by: list[str] = field(default_factory=list)
     trajectory: list[str] = field(default_factory=list)
     errors: list[Exception] = field(default_factory=list)
 
@@ -45,7 +43,7 @@ class State(Generic[T]):
 
     def __str__(self) -> str:
         """String representation of the state."""
-        return f"State(value={self.value}, data={self.data}, current_node={self.current_node}, processed_by={self.processed_by}, trajectory={self.trajectory}, errors={self.errors})"
+        return f"State(value={self.value}, data={self.data}, current_node={self.current_node}, trajectory={self.trajectory}, trajectory={self.trajectory}, errors={self.errors})"
 
 @dataclass
 class Branch[T]:

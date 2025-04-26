@@ -204,7 +204,6 @@ class CompiledGraph:
             return type(input_data)(
                 value=result.value,
                 current_node=node_name,
-                processed_by=input_data.processed_by.copy(),
                 trajectory=input_data.trajectory.copy(),
                 errors=input_data.errors.copy(),
                 data=result.data.copy()  # Use the new state's data
@@ -232,27 +231,40 @@ class CompiledGraph:
                     raise ExecutionError(f"Error handler failed: {str(handler_error)}")
             raise ExecutionError(f"Node {node_name} failed: {str(e)}")
 
+    def _validate_condition_result(self, result: Any, condition_name: str) -> None:
+        """Validate that a condition result is valid for branching.
+        
+        Args:
+            result: The result to validate
+            condition_name: Name of the condition function for error messages
+            
+        Raises:
+            ValidationError: If the result is not valid for branching
+        """
+        if isinstance(result, State):
+            raise ValidationError(
+                f"Condition function '{condition_name}' must return a hashable value "
+                f"(bool, str, int, float, tuple, or frozenset), not a State object"
+            )
+        
+        # Check if the result is hashable
+        try:
+            hash(result)
+        except TypeError:
+            raise ValidationError(
+                f"Condition function '{condition_name}' must return a hashable value "
+                f"(bool, str, int, float, tuple, or frozenset), not {type(result)}"
+            )
+
     async def execute_async(self, input_data: Any, callback: Callable[[str, Any], None] | None = None) -> State:
         """Execute the workflow graph asynchronously."""
         # Initialize state
-        if not isinstance(input_data, State):
-            state = State(
-                value=input_data,
-                current_node=START,
-                processed_by=[],
-                trajectory=[],
-                errors=[]
-            )
-        else:
+        if isinstance(input_data, State):
             state = input_data
-            if not hasattr(state, 'processed_by'):
-                state.processed_by = []
-            if not hasattr(state, 'trajectory'):
-                state.trajectory = []
-            if not hasattr(state, 'errors'):
-                state.errors = []
-
-        # Process nodes in order
+        else:
+            state = State(value=input_data)
+        
+        # Create execution queue
         queue = asyncio.Queue()
         await queue.put(START)
 
@@ -284,7 +296,7 @@ class CompiledGraph:
                 else:
                     state = result
 
-                state.processed_by.append(current_node)
+                state.trajectory.append(current_node)
                 
                 # Handle branches first
                 branch_taken = False
@@ -296,6 +308,9 @@ class CompiledGraph:
                         else:
                             condition_result = branch.condition(state)
                         
+                        # Validate condition result
+                        self._validate_condition_result(condition_result, branch_name)
+                        
                         # Find matching end node
                         target = branch.ends.get(condition_result)
                         if target is None:
@@ -303,9 +318,6 @@ class CompiledGraph:
                             target = branch.ends.get(str(condition_result))
                             
                         if target is not None:
-                            # Update state
-                            state.trajectory.append(target)  # Append the target node name instead of branch_name
-                            
                             # Call branch callback if defined
                             if branch.callback is not None:
                                 if asyncio.iscoroutinefunction(branch.callback):
@@ -343,27 +355,17 @@ class CompiledGraph:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError as e:
-            # Check if the RuntimeError is specifically "no running event loop"
-            if "no running event loop" in str(e).lower():
-                # This is expected if called from a sync context without a loop.
-                logger.debug("No running event loop found, creating new one with asyncio.run().")
-                return asyncio.run(self.execute_async(input_data, callback))
-            else:
-                # Unexpected error during loop detection
-                logger.exception(f"Unexpected RuntimeError during event loop detection: {e}")
-                raise e
+            # No running loop, create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(self.execute_async(input_data, callback))
+                return result
+            finally:
+                loop.close()
         else:
-            # A loop was found. Check if it's running.
-            if loop.is_running():
-                # Cannot block in a running loop using the synchronous execute method.
-                raise RuntimeError(
-                    "Synchronous execute() called from within an existing running event loop. "
-                    "Use execute_async() instead or run execute() from a synchronous context."
-                )
-            else:
-                # Loop exists but is not running. Use run_until_complete.
-                logger.debug("Existing event loop found but not running, using loop.run_until_complete().")
-                return loop.run_until_complete(self.execute_async(input_data, callback)) 
+            # Running loop exists, use it
+            return loop.run_until_complete(self.execute_async(input_data, callback)) 
 
     async def _execute_node(self, node_name: str, data: Any) -> Any:
         """Execute a single node in the graph."""
