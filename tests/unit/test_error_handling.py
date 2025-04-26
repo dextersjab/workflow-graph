@@ -3,11 +3,11 @@ import pytest
 import asyncio
 from dataclasses import dataclass
 from typing import Optional, List
-from workflow_graph import WorkflowGraph, START, END
+from workflow_graph import State, START, END
 from workflow_graph.exceptions import ExecutionError
 
 @dataclass
-class TestState:
+class TestState(State):
     value: int
     result: Optional[int] = None
     errors: List[str] = None
