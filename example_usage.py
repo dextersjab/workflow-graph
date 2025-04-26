@@ -5,7 +5,7 @@ from workflow_graph import WorkflowGraph, START, END
 
 # Define your state class
 @dataclass
-class WorkflowState:
+class NumberProcessingState:
     input_value: int
     current_value: Optional[int] = None
     is_even: Optional[bool] = None
@@ -17,24 +17,24 @@ class WorkflowState:
             self.errors = []
 
 # Define basic nodes that work with state
-def add(state: WorkflowState, callback=None) -> WorkflowState:
+def increment_number(state: NumberProcessingState, callback=None) -> NumberProcessingState:
     result = state.input_value + 1
     if callback:
-        callback(f"add: {state.input_value} -> {result}")
-    return WorkflowState(
+        callback(f"increment: {state.input_value} -> {result}")
+    return NumberProcessingState(
         input_value=state.input_value,
         current_value=result,
         errors=state.errors
     )
 
-def is_even(state: WorkflowState) -> bool:
+def check_if_even(state: NumberProcessingState) -> bool:
     return state.current_value % 2 == 0
 
-def handle_even(state: WorkflowState, callback=None) -> WorkflowState:
+def process_even_number(state: NumberProcessingState, callback=None) -> NumberProcessingState:
     result = f"Even: {state.current_value}"
     if callback:
         callback(result)
-    return WorkflowState(
+    return NumberProcessingState(
         input_value=state.input_value,
         current_value=state.current_value,
         is_even=True,
@@ -42,11 +42,11 @@ def handle_even(state: WorkflowState, callback=None) -> WorkflowState:
         errors=state.errors
     )
 
-def handle_odd(state: WorkflowState, callback=None) -> WorkflowState:
+def process_odd_number(state: NumberProcessingState, callback=None) -> NumberProcessingState:
     result = f"Odd: {state.current_value}"
     if callback:
         callback(result)
-    return WorkflowState(
+    return NumberProcessingState(
         input_value=state.input_value,
         current_value=state.current_value,
         is_even=False,
@@ -55,42 +55,42 @@ def handle_odd(state: WorkflowState, callback=None) -> WorkflowState:
     )
 
 # Create the WorkflowGraph
-graph = WorkflowGraph()
+number_classifier_workflow = WorkflowGraph()
 
 # Add nodes to the graph
-graph.add_node("addition", add)
-graph.add_node("is_even_check", is_even)
-graph.add_node("even_handler", handle_even)
-graph.add_node("odd_handler", handle_odd)
+number_classifier_workflow.add_node("increment_number", increment_number)
+number_classifier_workflow.add_node("check_if_even", check_if_even)
+number_classifier_workflow.add_node("process_even_number", process_even_number)
+number_classifier_workflow.add_node("process_odd_number", process_odd_number)
 
 # Define edges for the main workflow
-graph.add_edge(START, "addition")
-graph.add_edge("addition", "is_even_check")
+number_classifier_workflow.add_edge(START, "increment_number")
+number_classifier_workflow.add_edge("increment_number", "check_if_even")
 
 # Define conditional edges based on whether the number is even or odd
-graph.add_conditional_edges(
-    "is_even_check", 
-    path=is_even, 
-    path_map={True: "even_handler", False: "odd_handler"}
+number_classifier_workflow.add_conditional_edges(
+    "check_if_even", 
+    path=check_if_even, 
+    path_map={True: "process_even_number", False: "process_odd_number"}
 )
 
 # Set finish points
-graph.add_edge("even_handler", END)
-graph.add_edge("odd_handler", END)
+number_classifier_workflow.add_edge("process_even_number", END)
+number_classifier_workflow.add_edge("process_odd_number", END)
 
 # Compile the graph
-compiled_graph = graph.compile()
+compiled_number_classifier = number_classifier_workflow.compile()
 
 # Generate and print Mermaid diagram
 print("\nMermaid diagram representation:")
-print(graph.to_mermaid())
+print(number_classifier_workflow.to_mermaid())
 
 # Execute the workflow
-async def run_workflow(input_value):
-    initial_state = WorkflowState(input_value=input_value)
-    result = await compiled_graph.execute_async(initial_state, callback=print)
+async def run_number_classifier(input_value):
+    initial_state = NumberProcessingState(input_value=input_value)
+    result = await compiled_number_classifier.execute_async(initial_state, callback=print)
     print(f"Final Result: {result.result}")
 
 # Run the workflow with different inputs
-asyncio.run(run_workflow(5))  # Will output: "Even: 6"
-asyncio.run(run_workflow(6))  # Will output: "Odd: 7"
+asyncio.run(run_number_classifier(5))  # Will output: "Even: 6"
+asyncio.run(run_number_classifier(6))  # Will output: "Odd: 7"
