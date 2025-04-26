@@ -2,9 +2,8 @@
 
 import asyncio
 import logging
-from collections import defaultdict, deque
-from typing import Any, Callable, Hashable
-import inspect
+from collections import defaultdict
+from typing import Any, Callable
 
 from .constants import START, END
 from .models import Branch, Node, State
@@ -20,13 +19,21 @@ class CompiledGraph:
     with a given input to produce an output.
     """
     
-    def __init__(self, nodes: dict[str, Node], edges: set[tuple[str, str]], branches: dict[str, dict[str, Branch]]):
+    def __init__(
+        self, 
+        nodes: dict[str, Node], 
+        edges: set[tuple[str, str, Callable[[str, str, Any], None] | None]], # use the `Edge` type?
+        branches: dict[str, dict[str, Branch]]
+    ):
         """Initialize a compiled graph."""
         self.nodes = nodes
         self.edges = defaultdict(list)
-        for start, end in edges:
+        self.edge_callbacks = defaultdict(dict)
+        for start, end, callback in edges:
             self.edges[start].append(end)
-        self.branches = branches  # Keep the original branch dictionary structure
+            if callback is not None:
+                self.edge_callbacks[start][end] = callback
+        self.branches = branches
         self.compiled = False
 
     def to_mermaid(self) -> str:
@@ -103,8 +110,6 @@ class CompiledGraph:
                 # Add all nodes reachable from branches
                 if node in self.branches:
                     for branch in self.branches[node].values():
-                        if branch.then and branch.then != END:
-                            queue.append(branch.then)
                         if branch.ends:
                             for dest in branch.ends.values():
                                 if dest != END:
@@ -133,22 +138,6 @@ class CompiledGraph:
         for source, branches in self.branches.items():
             source_type = get_node_type(source)
             for branch_name, branch in branches.items():
-                # Check condition return type
-                if branch.condition and not isinstance(branch.condition, bool):
-                    # TODO: Add proper type checking for condition functions
-                    pass
-                
-                # Check destination types
-                if branch.then:
-                    then_type = get_node_type(branch.then)
-                    if source_type != Any and then_type != Any and source_type != then_type:
-                        raise ValidationError(f"Type mismatch in branch {branch_name}: {source} ({source_type}) -> then: {branch.then} ({then_type})")
-                
-                if branch.else_:
-                    else_type = get_node_type(branch.else_)
-                    if source_type != Any and else_type != Any and source_type != else_type:
-                        raise ValidationError(f"Type mismatch in branch {branch_name}: {source} ({source_type}) -> else: {branch.else_} ({else_type})")
-                
                 if branch.ends:
                     for condition_value, dest in branch.ends.items():
                         dest_type = get_node_type(dest)
@@ -157,7 +146,7 @@ class CompiledGraph:
         
         return self
 
-    async def execute_node(self, node_name: str, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
+    async def execute_node(self, node_name: str, input_data: Any, callback: Callable[[str, Any], None] | None = None) -> Any:
         """Execute a single node in the workflow graph."""
         if node_name not in self.nodes:
             raise ValueError(f"Node {node_name} not found in graph")
@@ -175,6 +164,10 @@ class CompiledGraph:
             else:
                 result = node.func(input_data)
             
+            # Validate that result is a State object
+            if not isinstance(result, State):
+                raise ValueError(f"Node {node_name} must return a State object, got {type(result)}")
+            
             # Call the node's callback if it exists
             if node.callback:
                 if asyncio.iscoroutinefunction(node.callback):
@@ -185,19 +178,22 @@ class CompiledGraph:
             # Call the global callback if it exists
             if callback:
                 if asyncio.iscoroutinefunction(callback):
-                    await callback(result)
+                    await callback(node_name, result)
                 else:
-                    callback(result)
+                    callback(node_name, result)
             
-            # Return a new state with the result
-            return State(
-                value=result,
+            # Return the new state
+            return type(input_data)(
+                value=result.value,
+                current_node=node_name,
                 processed_by=input_data.processed_by.copy(),
-                branch_taken=input_data.branch_taken
+                trajectory=input_data.trajectory.copy(),
+                errors=input_data.errors.copy(),
+                data=result.data.copy()  # Use the new state's data
             )
             
         except Exception as e:
-            logger.error(f"Error in node {node_name}: {e}")
+            logger.exception(f"Error in node {node_name}: {e}")
             if node.error_handler:
                 if asyncio.iscoroutinefunction(node.error_handler):
                     return await node.error_handler(e, input_data)
@@ -205,102 +201,111 @@ class CompiledGraph:
                     return node.error_handler(e, input_data)
             raise
 
-    async def execute_async(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
+    async def execute_async(self, input_data: Any, callback: Callable[[str, Any], None] | None = None) -> State:
         """Execute the workflow graph asynchronously."""
-        queue = deque()
-        visited = set()
-        
-        logger.debug(f"Starting execution with input: {input_data}")
-        
-        # Validate input state
+        # Initialize state
         if not isinstance(input_data, State):
-            raise ValueError("Input must be a State object")
-        if not hasattr(input_data, 'processed_by'):
-            raise ValueError("State object must have 'processed_by' attribute")
-        if not hasattr(input_data, 'branch_taken'):
-            raise ValueError("State object must have 'branch_taken' attribute")
+            state = State(
+                value=input_data,
+                current_node=START,
+                processed_by=[],
+                trajectory=[],
+                errors=[]
+            )
+        else:
+            state = input_data
+            if not hasattr(state, 'processed_by'):
+                state.processed_by = []
+            if not hasattr(state, 'trajectory'):
+                state.trajectory = []
+            if not hasattr(state, 'errors'):
+                state.errors = []
 
-        queue.append((START, input_data))
-        
-        while queue:
-            current_node, node_input = queue.popleft()
-            logger.debug(f"Processing node: {current_node} with input: {node_input}")
-            
+        # Process nodes in order
+        queue = asyncio.Queue()
+        await queue.put(START)
+
+        while not queue.empty():
+            current_node = await queue.get()
             if current_node == END:
-                logger.debug(f"Reached END node, returning state: {node_input}")
-                return node_input.value
-            
-            visit_key = (current_node, str(node_input))
-            if visit_key in visited:
-                logger.debug(f"Skipping already visited node: {current_node}")
+                break
+
+            # Special handling for START node - DO NOT REMOVE UNLESS EXPLICITLY ASKED TO!
+            if current_node == START:
+                # Add all direct edge destinations from START
+                for next_node in self.edges[START]:
+                    await queue.put(next_node)
+                # Add all conditional branch destinations from START
+                if START in self.branches:
+                    for branch in self.branches[START].values():
+                        if branch.ends:
+                            for dest in branch.ends.values():
+                                await queue.put(dest)
                 continue
-            visited.add(visit_key)
+
+            if current_node not in self.nodes:
+                raise ValueError(f"Node {current_node} not found in graph")
 
             try:
-                # Handle START node - just enqueue its outgoing edges
-                if current_node == START:
-                    # Add all direct edge destinations from START
-                    for next_node in self.edges[START]:
-                        queue.append((next_node, node_input))
-                    # Add all conditional branch destinations from START
-                    if START in self.branches:
-                        for branch_name, branch in self.branches[START].items():
-                            if branch.ends:
-                                for dest in branch.ends.values():
-                                    queue.append((dest, node_input))
-                    continue
-
-                # Execute the node and get the result
-                result = await self.execute_node(current_node, node_input, callback)
-                if result is None:
-                    return None
-                
-                # Validate result state
+                result = await self.execute_node(current_node, state, callback)
                 if not isinstance(result, State):
-                    raise ValueError("Node must return a State object")
-                
-                # Update processed nodes
-                result.processed_by.append(current_node)
-                
-                # Check for branches first
-                if current_node in self.branches:
-                    branch_taken = False
-                    for branch_name, branch in self.branches[current_node].items():
-                        # Evaluate the condition with the state value
-                        if asyncio.iscoroutinefunction(branch.condition):
-                            condition_result = await branch.condition(result.value)
-                        else:
-                            condition_result = branch.condition(result.value)
-                        
-                        # Update branch taken in state
-                        if condition_result:
-                            result.branch_taken = branch_name
-                            branch_taken = True
-                            
-                            # Determine next node based on condition
-                            next_node = None
-                            if branch.ends:
-                                if condition_result in branch.ends:
-                                    next_node = branch.ends[condition_result]
-                                elif str(condition_result) in branch.ends:
-                                    next_node = branch.ends[str(condition_result)]
-                            
-                            if next_node:
-                                queue.append((next_node, result))
-                    
-                    # Fail fast if no branch condition matches
-                    if not branch_taken:
-                        raise ValueError(f"No branch condition matched for node {current_node}")
+                    state.update_value(result)
                 else:
-                    # Add all direct edge destinations to the queue
-                    for next_node in self.edges[current_node]:
-                        queue.append((next_node, result))
+                    state = result
+
+                state.processed_by.append(current_node)
                 
+                # Handle branches first
+                branch_taken = False
+                if current_node in self.branches:
+                    for branch_name, branch in self.branches[current_node].items():
+                        # Evaluate condition
+                        if asyncio.iscoroutinefunction(branch.condition):
+                            condition_result = await branch.condition(state)
+                        else:
+                            condition_result = branch.condition(state)
+                        
+                        # Find matching end node
+                        target = branch.ends.get(condition_result)
+                        if target is None:
+                            # Try string representation
+                            target = branch.ends.get(str(condition_result))
+                            
+                        if target is not None:
+                            # Update state
+                            state.trajectory.append(target)  # Append the target node name instead of branch_name
+                            
+                            # Call branch callback if defined
+                            if branch.callback is not None:
+                                if asyncio.iscoroutinefunction(branch.callback):
+                                    await branch.callback(current_node, target, state)
+                                else:
+                                    branch.callback(current_node, target, state)
+                            
+                            # Queue next node
+                            await queue.put(target)
+                            branch_taken = True
+                            break
+                        else:
+                            raise ValueError(
+                                f"No matching end node for condition result: {condition_result}"
+                            )
+                
+                # If no branch was taken, handle normal edges
+                if not branch_taken and current_node in self.edges:
+                    for next_node in self.edges[current_node]:
+                        await queue.put(next_node)
+                            
             except Exception as e:
-                logger.error(f"Error executing node {current_node}: {e}")
-                raise
-        
-        return node_input.value
+                logger.exception(f"Error during execution at node {current_node}: {e}")
+                state.add_error(e, current_node)
+                if current_node in self.nodes and self.nodes[current_node].error_handler is not None:
+                    if asyncio.iscoroutinefunction(self.nodes[current_node].error_handler):
+                        await self.nodes[current_node].error_handler(e, state)
+                    else:
+                        self.nodes[current_node].error_handler(e, state)
+                    
+        return state
 
     def execute(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> Any:
         """Execute the workflow graph synchronously."""
@@ -314,7 +319,7 @@ class CompiledGraph:
                 return asyncio.run(self.execute_async(input_data, callback))
             else:
                 # Unexpected error during loop detection
-                logger.error(f"Unexpected RuntimeError during event loop detection: {e}")
+                logger.exception(f"Unexpected RuntimeError during event loop detection: {e}")
                 raise e
         else:
             # A loop was found. Check if it's running.
@@ -360,6 +365,7 @@ class CompiledGraph:
                             return None
                         return result
                     except Exception as handler_error:
-                        logger.error(f"Error handler for node {node_name} failed: {str(handler_error)}")
+                        logger.exception(f"Error handler for node {node_name} failed: {str(handler_error)}")
                         raise ExecutionError(f"Error handler failed: {str(handler_error)}")
+                logger.exception(f"Node {node_name} failed: {str(e)}")
                 raise ExecutionError(f"Node {node_name} failed: {str(e)}") 

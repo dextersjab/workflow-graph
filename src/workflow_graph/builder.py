@@ -5,29 +5,27 @@ from collections import defaultdict
 from typing import (
     Any,
     Callable,
-    Hashable,
-    Literal,
-    Sequence,
-    get_args,
+    Generic,
+    TypeVar,
     get_origin,
-    get_type_hints,
+    get_args,
 )
 from collections import deque
+import inspect
 
 from .constants import START, END
-from .models import Branch, Node
+from .models import Branch, Node, State
 from .executor import CompiledGraph
 from .exceptions import (
-    InvalidNodeNameError,
-    DuplicateNodeError,
     InvalidEdgeError,
     TypeMismatchError,
 )
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T", bound=State[Any])
 
-class WorkflowGraph:
+class WorkflowGraph(Generic[T]):
     """Builder for creating and validating workflow graphs.
     
     This class provides methods to define nodes, edges, and conditional branches
@@ -38,12 +36,12 @@ class WorkflowGraph:
     def __init__(self) -> None:
         """Initialize a new workflow graph builder."""
         self.nodes: dict[str, Node] = {}
-        self.edges = set[tuple[str, str]]()
+        self.edges = set[tuple[str, str, Callable[[str, str, Any], None] | None]]()
         self.branches: defaultdict[str, dict[str, Branch]] = defaultdict(dict)
         self.compiled = False
 
     @property
-    def _all_edges(self) -> set[tuple[str, str]]:
+    def _all_edges(self) -> set[tuple[str, str, Callable[[str, str, Any], None] | None]]:
         """Return all edges in the graph."""
         return self.edges
 
@@ -66,6 +64,17 @@ class WorkflowGraph:
         if name in self.nodes:
             raise ValueError(f"Node '{name}' already exists")
         
+        # Validate that the function returns a State object
+        return_annotation = inspect.signature(func).return_annotation
+        if return_annotation != inspect.Signature.empty:
+            # Get the base type (e.g., State[int] -> State)
+            base_type = get_origin(return_annotation)
+            if base_type is None:
+                base_type = return_annotation
+            
+            if not issubclass(base_type, State):
+                raise ValueError(f"Node function '{name}' must return a State object or subclass, got {return_annotation}")
+        
         self.nodes[name] = Node(
             name=name,
             func=func,
@@ -80,12 +89,18 @@ class WorkflowGraph:
         )
         return self
 
-    def add_edge(self, start_key: str, end_key: str) -> None:
+    def add_edge(
+        self, 
+        start_key: str, 
+        end_key: str,
+        callback: Callable[[str, str, Any], None] | None = None
+    ) -> None:
         """Add a directed edge between two nodes.
         
         Args:
             start_key: Source node name
             end_key: Destination node name
+            callback: Optional callback function that receives (source, target, state)
             
         Raises:
             ValueError: If using reserved nodes incorrectly
@@ -121,13 +136,14 @@ class WorkflowGraph:
                         f"'{end_key}' expects {end_node.input_type.__name__}"
                     )
 
-        self.edges.add((start_key, end_key))
+        self.edges.add((start_key, end_key, callback))
 
     def add_conditional_edges(
         self,
         source: str,
         condition: Callable[[Any], Any],
         path_map: dict[Any, str] | None = None,
+        callback: Callable[[str, str, Any], None] | None = None
     ) -> None:
         """Add conditional edges from a source node.
         
@@ -135,6 +151,7 @@ class WorkflowGraph:
             source: Source node name
             condition: Function that determines the branch path
             path_map: Mapping of condition values to destination node names
+            callback: Optional callback function that receives (source, target, state)
             
         Raises:
             ValueError: If a branch with the same name already exists
@@ -161,7 +178,8 @@ class WorkflowGraph:
             source=source,
             branch_id=name,
             condition=condition,
-            ends=path_map
+            ends=path_map,
+            callback=callback
         )
         
         # Add branch to graph
@@ -170,7 +188,7 @@ class WorkflowGraph:
     def validate(self) -> None:
         """Validate the graph structure."""
         # Check for at least one entry point
-        has_entry_edge = any(src == START for src, _ in self.edges)
+        has_entry_edge = any(src == START for src, _, _ in self._all_edges)
         has_conditional_entry = START in self.branches
         if not has_entry_edge and not has_conditional_entry:
             raise ValueError(
@@ -178,7 +196,7 @@ class WorkflowGraph:
             )
 
         # Check for at least one finish point
-        has_finish_edge = any(dst == END for _, dst in self.edges)
+        has_finish_edge = any(dst == END for _, dst, _ in self._all_edges)
         has_conditional_finish = any(
             END in branch.ends.values() if branch.ends else False
             for branches in self.branches.values()
@@ -203,7 +221,7 @@ class WorkflowGraph:
                 visited.add(node)
                 
                 # Add all nodes reachable from outgoing edges
-                for src, dest in self.edges:
+                for src, dest, _ in self.edges:
                     if src == node and dest != END:
                         queue.append(dest)
                 
@@ -240,7 +258,7 @@ class WorkflowGraph:
             
             # Check edges
             if node in self.edges:
-                for dest in self.edges[node]:
+                for dest, _, _ in self.edges:
                     if dest != END and visit(dest):
                         return True
             
@@ -269,7 +287,7 @@ class WorkflowGraph:
         self.validate()
         
         # Check for at least one entry point (edge from START)
-        has_entry_edge = any(src == START for src, _ in self._all_edges)
+        has_entry_edge = any(src == START for src, _, _ in self._all_edges)
         has_conditional_entry = START in self.branches
         if not has_entry_edge and not has_conditional_entry:
             raise ValueError(
@@ -277,7 +295,7 @@ class WorkflowGraph:
             )
             
         # Check for at least one finish point (edge to END)
-        has_finish_edge = any(dst == END for _, dst in self._all_edges)
+        has_finish_edge = any(dst == END for _, dst, _ in self._all_edges)
         has_conditional_finish = any(
             END in branch.ends.values() if branch.ends else False
             for branches in self.branches.values()
@@ -294,7 +312,7 @@ class WorkflowGraph:
             queue = deque()
 
             # Add entry points from direct edges (START -> node)
-            for src, dst in self.edges:
+            for src, dst, _ in self.edges:
                 if src == START and dst != END:
                     if dst not in queue:
                         queue.append(dst)
@@ -318,7 +336,7 @@ class WorkflowGraph:
                 visited.add(node)
 
                 # Add nodes reachable from direct edges
-                for start_node, end_node in self.edges:
+                for start_node, end_node, _ in self.edges:
                     if start_node == node and end_node != END:
                         if end_node not in visited:
                             queue.append(end_node)
@@ -349,9 +367,9 @@ class WorkflowGraph:
         """Execute the workflow graph with the given input."""
         return self.compile().execute(data)
 
-    async def execute_async(self, data: Any) -> Any:
+    async def execute_async(self, data: Any, callback: Callable[[str, Any], None] | None = None) -> State:
         """Execute the workflow graph asynchronously with the given input."""
-        return await self.compile().execute_async(data)
+        return await self.compile().execute_async(data, callback)
 
     def to_mermaid(self) -> str:
         """Generate a Mermaid diagram representation of the workflow graph.

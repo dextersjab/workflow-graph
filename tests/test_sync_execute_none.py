@@ -1,10 +1,8 @@
-import pytest
 import asyncio
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Any
 
-from src.workflow_graph.models import State
-from src.workflow_graph import WorkflowGraph, START, END
+from workflow_graph import WorkflowGraph, START, END, State
 
 @dataclass
 class TestState(State[Any]):
