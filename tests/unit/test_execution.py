@@ -3,28 +3,24 @@ import pytest
 import asyncio
 from dataclasses import dataclass
 from typing import Optional
-from workflow_graph import WorkflowGraph, START, END
+from workflow_graph import State, START, END
 
 @dataclass
-class TestState:
-    value: int
-    result: Optional[int] = None
-    trajectory: list = None
+class TestState(State):
+    pass
 
 def test_simple_workflow_execution(graph):
     """Test execution of a simple linear workflow."""
     def add_one(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=state.value + 1,
-            trajectory=state.trajectory.copy() + ["add"]
+            value=state.value + 1,
+            trajectory=state.trajectory.copy()
         )
 
     def multiply_by_two(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=state.result * 2,
-            trajectory=state.trajectory.copy() + ["multiply"]
+            value=state.value * 2,
+            trajectory=state.trajectory.copy()
         )
 
     graph.add_node("add", add_one)
@@ -35,7 +31,7 @@ def test_simple_workflow_execution(graph):
 
     initial_state = TestState(value=1)
     result = graph.execute(initial_state)
-    assert result.result == 4  # (1 + 1) * 2 = 4
+    assert result.value == 4  # (1 + 1) * 2 = 4
 
 def test_conditional_workflow_execution(graph):
     """Test execution of a workflow with conditional branches."""
@@ -44,16 +40,14 @@ def test_conditional_workflow_execution(graph):
 
     def add_one(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=state.value + 1,
-            trajectory=state.trajectory.copy() + ["add"]
+            value=state.value + 1,
+            trajectory=state.trajectory.copy()
         )
 
     def multiply_by_two(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=state.value * 2,
-            trajectory=state.trajectory.copy() + ["multiply"]
+            value=state.value * 2,
+            trajectory=state.trajectory.copy()
         )
 
     # Add nodes
@@ -73,13 +67,13 @@ def test_conditional_workflow_execution(graph):
     # Test with even number
     initial_state = TestState(value=2)
     result = graph.execute(initial_state)
-    assert result.result == 3  # 2 is even, so add_one is called: 2 + 1 = 3
+    assert result.value == 3  # 2 is even, so add_one is called: 2 + 1 = 3
     assert result.trajectory == ["add"]
 
     # Test with odd number
     initial_state = TestState(value=3)
     result = graph.execute(initial_state)
-    assert result.result == 6  # 3 is odd, so multiply_by_two is called: 3 * 2 = 6
+    assert result.value == 6  # 3 is odd, so multiply_by_two is called: 3 * 2 = 6
     assert result.trajectory == ["multiply"]
 
 @pytest.mark.asyncio
@@ -88,8 +82,7 @@ async def test_async_node_execution(graph):
     async def async_add_one(state: TestState) -> TestState:
         await asyncio.sleep(0.1)
         return TestState(
-            value=state.value,
-            result=state.value + 1
+            value=state.value + 1,
         )
 
     graph.add_node("async_add", async_add_one)
@@ -98,7 +91,7 @@ async def test_async_node_execution(graph):
     
     initial_state = TestState(value=1)
     result = await graph.execute_async(initial_state)
-    assert result.result == 2
+    assert result.value == 2
 
 def test_callback_execution(graph):
     """Test execution with callbacks for streaming partial results.
@@ -116,26 +109,23 @@ def test_callback_execution(graph):
         # Store the result for later verification
         process_data.last_result = result
         return TestState(
-            value=state.value,
-            result=result
+            value=result,
         )
     
     def analyze_result(state: TestState) -> TestState:
-        result = state.result + 5
+        result = state.value + 5
         # Store the result for later verification
         analyze_result.last_result = result
         return TestState(
-            value=state.value,
-            result=result
+            value=result,
         )
     
     def format_output(state: TestState) -> TestState:
-        result = state.result * 2
+        result = state.value * 2
         # Store the result for later verification
         format_output.last_result = result
         return TestState(
-            value=state.value,
-            result=result
+            value=result,
         )
     
     # Node-specific callbacks that will stream results to the client
@@ -175,7 +165,7 @@ def test_callback_execution(graph):
     final_result = graph.execute(initial_state)
     
     # Verify the final result
-    assert final_result.result == 110  # ((5 * 10) + 5) * 2
+    assert final_result.value == 110  # ((5 * 10) + 5) * 2
     
     # Verify that we received streaming updates from each step
     assert len(streaming_results) == 3
