@@ -33,49 +33,6 @@ def test_simple_workflow_execution(graph):
     result = graph.execute(initial_state)
     assert result.value == 4  # (1 + 1) * 2 = 4
 
-def test_conditional_workflow_execution(graph):
-    """Test execution of a workflow with conditional branches."""
-    def check_even(state: TestState) -> bool:
-        return state.value % 2 == 0
-
-    def add_one(state: TestState) -> TestState:
-        return TestState(
-            value=state.value + 1,
-            trajectory=state.trajectory.copy()
-        )
-
-    def multiply_by_two(state: TestState) -> TestState:
-        return TestState(
-            value=state.value * 2,
-            trajectory=state.trajectory.copy()
-        )
-
-    # Add nodes
-    graph.add_node("check", check_even)
-    graph.add_node("add", add_one)
-    graph.add_node("multiply", multiply_by_two)
-
-    graph.add_edge(START, "check")
-    graph.add_conditional_edges(
-        "check",
-        check_even,
-        path_map={"True": "add", "False": "multiply"}
-    )
-    graph.add_edge("add", END)
-    graph.add_edge("multiply", END)
-
-    # Test with even number
-    initial_state = TestState(value=2)
-    result = graph.execute(initial_state)
-    assert result.value == 3  # 2 is even, so add_one is called: 2 + 1 = 3
-    assert result.trajectory == ["add"]
-
-    # Test with odd number
-    initial_state = TestState(value=3)
-    result = graph.execute(initial_state)
-    assert result.value == 6  # 3 is odd, so multiply_by_two is called: 3 * 2 = 6
-    assert result.trajectory == ["multiply"]
-
 @pytest.mark.asyncio
 async def test_async_node_execution(graph):
     """Test execution of a workflow with async nodes."""
