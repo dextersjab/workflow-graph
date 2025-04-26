@@ -195,11 +195,21 @@ class CompiledGraph:
         except Exception as e:
             logger.exception(f"Error in node {node_name}: {e}")
             if node.error_handler:
-                if asyncio.iscoroutinefunction(node.error_handler):
-                    return await node.error_handler(e, input_data)
-                else:
-                    return node.error_handler(e, input_data)
-            raise
+                try:
+                    if asyncio.iscoroutinefunction(node.error_handler):
+                        result = await node.error_handler(e, input_data)
+                    else:
+                        result = node.error_handler(e, input_data)
+                    
+                    # Validate that error handler returns a State object
+                    if not isinstance(result, State):
+                        raise ValueError(f"Error handler for node {node_name} must return a State object, got {type(result)}")
+                    
+                    return result
+                except Exception as handler_error:
+                    logger.exception(f"Error handler for node {node_name} failed: {handler_error}")
+                    raise ExecutionError(f"Error handler failed: {str(handler_error)}")
+            raise ExecutionError(f"Node {node_name} failed: {str(e)}")
 
     async def execute_async(self, input_data: Any, callback: Callable[[str, Any], None] | None = None) -> State:
         """Execute the workflow graph asynchronously."""

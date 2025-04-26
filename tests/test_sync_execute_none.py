@@ -24,11 +24,11 @@ def output_node(state: TestState) -> TestState:
     )
 
 # Define an async error handler that returns None (for a different test)
-async def async_error_handler_returns_none(error: Exception, state: TestState) -> None:
-    """Async error handler that returns None."""
+async def async_error_handler_returns_none(error: Exception, state: TestState) -> TestState:
+    """Async error handler that returns a State with None value."""
     assert isinstance(error, ValueError)
     assert str(error) == "This node is designed to fail."
-    return None
+    return TestState(value=None)
 
 # Define an async node that raises an error
 async def async_node_raises_error(state: TestState) -> TestState:
@@ -62,7 +62,7 @@ def test_sync_execute_with_async_node_returning_none():
 def test_sync_execute_with_failing_async_node_and_async_none_handler():
     """
     Tests that graph.execute() (sync) works correctly when an async node
-    fails and its async error handler returns None.
+    fails and its async error handler returns a State with None value.
     """
     graph = WorkflowGraph()
     graph.add_node(
@@ -71,19 +71,21 @@ def test_sync_execute_with_failing_async_node_and_async_none_handler():
         on_error=async_error_handler_returns_none,
         retries=0 # No retries
     )
-    graph.add_node("next_node", output_node) # This node might be skipped if handler returns None
+    graph.add_node("next_node", output_node) # This node will process the None value
 
     graph.add_edge(START, "failing_node")
-    # If error handler returns a value, it goes to the next node
     graph.add_edge("failing_node", "next_node")
     graph.add_edge("next_node", END)
 
-    print("\nTesting synchronous execute with failing node and async handler returning None...")
+    print("\nTesting synchronous execute with failing node and async handler returning State with None...")
     initial_state = TestState(value="test_error_input")
     # Execute synchronously
     result = graph.execute(initial_state)
-    assert result is None  # Handler returns None, so execution should stop
-    print("Synchronous execute with failing node and async handler returning None finished successfully.")
+    
+    # The error handler returns a State with None value, which is processed by next_node
+    assert isinstance(result, TestState)
+    assert result.value == "Final result with input: None"
+    print("Synchronous execute with failing node and async handler returning State with None finished successfully.")
 
 # To run this test:
 # Ensure pytest is installed: pip install pytest

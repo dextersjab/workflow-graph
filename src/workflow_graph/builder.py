@@ -75,6 +75,17 @@ class WorkflowGraph(Generic[T]):
             if not issubclass(base_type, State):
                 raise ValueError(f"Node function '{name}' must return a State object or subclass, got {return_annotation}")
         
+        # Validate error handler return type if provided
+        if on_error is not None:
+            error_return_annotation = inspect.signature(on_error).return_annotation
+            if error_return_annotation != inspect.Signature.empty:
+                error_base_type = get_origin(error_return_annotation)
+                if error_base_type is None:
+                    error_base_type = error_return_annotation
+                
+                if not issubclass(error_base_type, State):
+                    raise ValueError(f"Error handler for node '{name}' must return a State object or subclass, got {error_return_annotation}")
+        
         self.nodes[name] = Node(
             name=name,
             func=func,
