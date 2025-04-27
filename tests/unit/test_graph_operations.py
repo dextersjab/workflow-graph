@@ -213,7 +213,7 @@ def test_compile_no_entry_point():
     graph = WorkflowGraph()
     graph.add_node("task1", lambda state: state)
     graph.add_edge("task1", END)
-    with pytest.raises(ValidationError, match="No entry point found"):
+    with pytest.raises(ValidationError, match="Graph must have at least one entry point"):
         graph.compile()
 
 def test_compile_no_finish_point():
@@ -222,7 +222,7 @@ def test_compile_no_finish_point():
     graph.add_node("task1", lambda state: state)
     graph.add_edge(START, "task1")
     # No edge to END
-    with pytest.raises(ValidationError, match="No exit point found"):
+    with pytest.raises(ValidationError, match="Graph must have at least one exit point"):
         graph.compile()
 
 def test_compile_with_conditional_entry():

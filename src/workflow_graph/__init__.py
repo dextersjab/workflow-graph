@@ -32,7 +32,6 @@ from .exceptions import (
     TypeMismatchError,
     ExecutionError,
     ValidationError,
-    EntryExitValidationError,
 )
 
 # Type validation utilities

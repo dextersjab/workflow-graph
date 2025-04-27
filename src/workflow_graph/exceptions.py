@@ -27,7 +27,4 @@ class ExecutionError(WorkflowGraphError):
 class ValidationError(WorkflowGraphError):
     """Raised when graph validation fails."""
     pass
-
-class EntryExitValidationError(ValidationError):
-    """Raised when a graph is missing proper entry or exit points."""
-    pass 
+ 

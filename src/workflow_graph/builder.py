@@ -20,6 +20,7 @@ from .exceptions import (
     InvalidEdgeError,
     InvalidNodeNameError,
     TypeMismatchError,
+    ValidationError,
 )
 
 logger = logging.getLogger(__name__)
@@ -249,7 +250,7 @@ class WorkflowGraph(Generic[T]):
         has_entry_edge = any(src == START for src, _, _ in self._all_edges)
         has_conditional_entry = START in self.branches
         if not has_entry_edge and not has_conditional_entry:
-            raise ValueError(
+            raise ValidationError(
                 f"Graph must have at least one entry point defined by adding an edge from '{START}' or a conditional edge from '{START}'"
             )
 
@@ -261,8 +262,8 @@ class WorkflowGraph(Generic[T]):
             for branch in branches.values()
         )
         if not has_finish_edge and not has_conditional_finish:
-            raise ValueError(
-                f"Graph must have at least one finish point defined by adding an edge to '{END}' or a conditional edge to '{END}'"
+            raise ValidationError(
+                f"Graph must have at least one exit point defined by adding an edge to '{END}' or a conditional edge to '{END}'"
             )
 
         # Check for unreachable nodes
