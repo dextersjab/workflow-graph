@@ -250,8 +250,17 @@ def test_compile_with_conditional_finish():
     """Test compiling a graph with only conditional finish points."""
     graph = WorkflowGraph()
     graph.add_node("task1", lambda state: state)
-    graph.add_node("task2", lambda state: state)
     graph.add_edge(START, "task1")
     graph.add_conditional_edges("task1", lambda state: True, {True: END})
     # Should compile without error
-    graph.compile() 
+    graph.compile()
+
+def test_compile_with_unreachable_node():
+    """Test that unreachable nodes are detected and raise an error."""
+    graph = WorkflowGraph()
+    graph.add_node("task1", lambda state: state)
+    graph.add_node("task2", lambda state: state)  # Unreachable
+    graph.add_edge(START, "task1")
+    graph.add_conditional_edges("task1", lambda state: True, {True: END})
+    with pytest.raises(ValueError, match="Unreachable nodes detected: task2"):
+        graph.compile() 
