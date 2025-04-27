@@ -124,21 +124,20 @@ def test_type_validation_with_branches(graph):
             result=float(state.value)
         )
 
-    # Add nodes
+    # Add nodes (only those returning State)
     graph.add_node("add1", add1)
-    graph.add_node("is_even", is_even)
     graph.add_node("to_str", to_str)
     graph.add_node("to_float", to_float)
 
     # Add entry and exit points
     graph.add_edge(START, "add1")
-    graph.add_edge("add1", "is_even")
     graph.add_edge("to_str", END)
     graph.add_edge("to_float", END)
 
+    # Use is_even as a branch condition, not a node
     graph.add_conditional_edges(
-        "is_even",
-        path=is_even,
+        "add1",
+        condition=is_even,
         path_map={True: "to_str", False: "to_float"}
     )
 
