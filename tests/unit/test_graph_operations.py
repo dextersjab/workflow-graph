@@ -226,12 +226,18 @@ def test_compile_no_finish_point():
         graph.compile()
 
 def test_compile_with_conditional_entry():
-    """Test compiling a graph with only a conditional entry point."""
+    """Test compiling a graph with an explicit entry node that branches conditionally."""
     graph = WorkflowGraph()
+    graph.add_node("entry", lambda state: state)  # Explicit entry node
     graph.add_node("task_a", lambda state: state)
     graph.add_node("task_b", lambda state: state)
+    
+    # Connect START to entry node
+    graph.add_edge(START, "entry")
+    
+    # Branch from entry node instead of START
     graph.add_conditional_edges(
-        START,
+        "entry",
         lambda state: "a" if state.value > 5 else "b",
         {"a": "task_a", "b": "task_b"}
     )
