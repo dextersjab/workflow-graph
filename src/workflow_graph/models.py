@@ -79,7 +79,7 @@ class Edge:
 
     def __hash__(self) -> int:
         """Make Edge hashable for use in sets."""
-        return hash((self.source, self.target, self.callback, self.branch))
+        return hash((self.source, self.target, self.callback))
 
     def __eq__(self, other: object) -> bool:
         """Compare edges for equality."""
@@ -89,7 +89,6 @@ class Edge:
             self.source == other.source
             and self.target == other.target
             and self.callback == other.callback
-            and self.branch == other.branch
         )
 
 @dataclass
