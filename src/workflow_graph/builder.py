@@ -205,12 +205,12 @@ class WorkflowGraph(Generic[T]):
             )
         
         if source not in self.nodes:
-            raise ValueError(f"Source node '{source}' does not exist")
+            raise InvalidNodeNameError(f"Source node '{source}' does not exist")
         
         # Get branch name from condition function
         name = getattr(condition, "__name__", "condition")
         if name in self.branches[source]:
-            raise ValueError(
+            raise InvalidNodeNameError(
                 f"Branch with name `{name}` already exists for node `{source}`"
             )
         

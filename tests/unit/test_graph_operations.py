@@ -74,7 +74,7 @@ def test_conditional_edges(graph):
     assert "is_positive" in graph.branches["node1"]
 
     # Test adding conditional edges from non-existent node
-    with pytest.raises(ValidationError):
+    with pytest.raises(InvalidNodeNameError):
         graph.add_conditional_edges(
             "non_existent",
             is_negative,
