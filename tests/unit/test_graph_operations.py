@@ -11,13 +11,12 @@ from workflow_graph.exceptions import (
     TypeMismatchError,
     ValidationError,
 )
-from workflow_graph.models import Edge
+from workflow_graph import Edge, State
 
 @dataclass
-class TestState:
+class TestState(State[int]):
     """Test state class."""
-    value: Any
-    result: Any = None
+    pass
 
 @pytest.fixture
 def graph():
@@ -83,14 +82,14 @@ def test_conditional_edges(graph):
 
 def test_type_validation(graph):
     """Test type compatibility between connected nodes."""
-    def str_func(x: str) -> str:
-        return x + "a"
+    def str_func(state: State) -> State[str]:
+        return TestState(value=state.value + "a")
 
-    def int_func(x: int) -> int:
-        return x + 1
+    def int_func(state: State) -> State[int]:
+        return TestState(value=state.value + 1)
 
-    graph.add_node("str_node", str_func)
-    graph.add_node("int_node", int_func)
+    graph.add_node("str_node", str_func, output_type=str)
+    graph.add_node("int_node", int_func, input_type=int)
 
     # Add entry and exit points
     graph.add_edge(START, "str_node")
