@@ -16,8 +16,8 @@ This package implements a type-safe, asynchronous workflow engine that enables d
 Defines the core data structures that make up the workflow graph:
 - `State[T]`: Generic state container that tracks execution progress and errors
 - `Node[T]`: Represents a computational unit with type-safe input/output
+- `Edge`: Connects nodes in the graph with support for callbacks and branches
 - `Branch[T]`: Defines conditional execution paths
-- `Edge`: Connects nodes and branches in the graph
 
 ### `builder.py`
 Provides the `WorkflowGraph` class for constructing and validating workflow graphs:
@@ -32,6 +32,7 @@ Implements the `CompiledGraph` class for executing workflow graphs:
 - State management and error propagation
 - Branch condition evaluation
 - Callback execution timing
+- Centralised type validation
 
 ### `constants.py`
 Defines special nodes and constants:
@@ -46,11 +47,12 @@ Custom exceptions for error handling:
 
 ## Design Principles
 
-1. **Type Safety First**: All operations maintain type consistency through generics
-2. **Async by Default**: Core execution engine is async-first with sync wrappers
-3. **Error Handling**: Errors are propagated and handled at the appropriate level
-4. **State Immutability**: State objects are immutable to prevent side effects
-5. **Branch Isolation**: Branches operate independently with their own state
+1. **Type safety first**: All operations maintain type consistency through generics
+2. **Async by default**: Core execution engine is async-first with sync wrappers
+3. **Error handling**: Errors are propagated and handled at the appropriate level
+4. **State immutability**: State objects are immutable to prevent side effects
+5. **Branch isolation**: Branches operate independently with their own state
+6. **Explicit entry points**: Conditional branches must start from explicit entry nodes
 
 ## Next Steps
 

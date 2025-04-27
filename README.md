@@ -25,19 +25,19 @@ pip install workflow-graph
 ### Basic Workflow
 
 ```python
-from workflow_graph import WorkflowGraph, START, END
+from workflow_graph import WorkflowGraph, START, END, State
 from dataclasses import dataclass
 
 @dataclass
-class State:
-    value: int
-    result: int = None
+class NumberState(State[int]):
+    """State for number processing workflow."""
+    pass
 
-def add_one(state: State) -> State:
-    return State(value=state.value, result=state.value + 1)
+def add_one(state: NumberState) -> NumberState:
+    return NumberState(value=state.value + 1)
 
-def multiply_by_two(state: State) -> State:
-    return State(value=state.value, result=state.result * 2)
+def multiply_by_two(state: NumberState) -> NumberState:
+    return NumberState(value=state.value * 2)
 
 graph = WorkflowGraph()
 graph.add_node("add", add_one)
@@ -46,45 +46,50 @@ graph.add_edge(START, "add")
 graph.add_edge("add", "multiply")
 graph.add_edge("multiply", END)
 
-initial_state = State(value=1)
+initial_state = NumberState(value=1)
 result = graph.execute(initial_state)
-assert result.result == 4  # (1 + 1) * 2 = 4
+assert result.value == 4  # (1 + 1) * 2 = 4
 ```
 
 ### Async Workflow
 
 ```python
 import asyncio
-from workflow_graph import WorkflowGraph, START, END
+from workflow_graph import WorkflowGraph, START, END, State
 
-async def async_operation(state: State) -> State:
+@dataclass
+class NumberState(State[int]):
+    """State for number processing workflow."""
+    pass
+
+async def async_operation(state: NumberState) -> NumberState:
     await asyncio.sleep(0.1)
-    return State(value=state.value, result=state.value + 1)
+    return NumberState(value=state.value + 1)
 
 graph = WorkflowGraph()
 graph.add_node("async_op", async_operation)
 graph.add_edge(START, "async_op")
 graph.add_edge("async_op", END)
 
-initial_state = State(value=1)
+initial_state = NumberState(value=1)
 result = await graph.execute_async(initial_state)
-assert result.result == 2
+assert result.value == 2
 ```
 
 ### Conditional Branches
 
 ```python
-def is_even(state: State) -> bool:
+def is_even(state: NumberState) -> bool:
     return state.value % 2 == 0
 
-def process_even(state: State) -> State:
-    return State(value=state.value, result=state.value * 2)
+def process_even(state: NumberState) -> NumberState:
+    return NumberState(value=state.value * 2)
 
-def process_odd(state: State) -> State:
-    return State(value=state.value, result=state.value + 1)
+def process_odd(state: NumberState) -> NumberState:
+    return NumberState(value=state.value + 1)
 
 graph = WorkflowGraph()
-graph.add_node("check", is_even)
+graph.add_node("check", lambda state: state)  # Entry node
 graph.add_node("even", process_even)
 graph.add_node("odd", process_odd)
 
@@ -98,22 +103,22 @@ graph.add_edge("even", END)
 graph.add_edge("odd", END)
 
 # Test with even number
-result = graph.execute(State(value=2))
-assert result.result == 4  # 2 * 2 = 4
+result = graph.execute(NumberState(value=2))
+assert result.value == 4  # 2 * 2 = 4
 
 # Test with odd number
-result = graph.execute(State(value=3))
-assert result.result == 4  # 3 + 1 = 4
+result = graph.execute(NumberState(value=3))
+assert result.value == 4  # 3 + 1 = 4
 ```
 
 ### Error Handling
 
 ```python
-def failing_operation(state: State) -> State:
+def failing_operation(state: NumberState) -> NumberState:
     raise ValueError("Operation failed")
 
-def on_error(error: Exception, state: State) -> State:
-    return State(value=state.value, result=-1)
+def on_error(error: Exception, state: NumberState) -> NumberState:
+    return NumberState(value=-1, errors=state.errors + [str(error)])
 
 graph = WorkflowGraph()
 graph.add_node(
@@ -126,25 +131,26 @@ graph.add_node(
 graph.add_edge(START, "failing_op")
 graph.add_edge("failing_op", END)
 
-result = graph.execute(State(value=1))
-assert result.result == -1
+result = graph.execute(NumberState(value=1))
+assert result.value == -1
+assert len(result.errors) > 0
 ```
 
 ### Callbacks
 
 ```python
-def process_data(state: State) -> State:
-    return State(value=state.value, result=state.value * 10)
+def process_data(state: NumberState) -> NumberState:
+    return NumberState(value=state.value * 10)
 
-def callback(result: State):
-    print(f"Processed result: {result.result}")
+def callback(result: NumberState):
+    print(f"Processed result: {result.value}")
 
 graph = WorkflowGraph()
 graph.add_node("process", process_data, callback=callback)
 graph.add_edge(START, "process")
 graph.add_edge("process", END)
 
-graph.execute(State(value=5))  # Prints: Processed result: 50
+graph.execute(NumberState(value=5))  # Prints: Processed result: 50
 ```
 
 ### Generic Types
@@ -155,15 +161,15 @@ from typing import Generic, TypeVar
 T = TypeVar('T')
 
 @dataclass
-class GenericState(Generic[T]):
-    value: T
-    result: T = None
+class GenericState(State[T]):
+    """Generic state class for type-safe workflows."""
+    pass
 
 def process_int(state: GenericState[int]) -> GenericState[int]:
-    return GenericState(value=state.value, result=state.value + 1)
+    return GenericState(value=state.value + 1)
 
 def process_str(state: GenericState[str]) -> GenericState[str]:
-    return GenericState(value=state.value, result=state.value + " processed")
+    return GenericState(value=state.value + " processed")
 
 # Create separate graphs for different types
 int_graph = WorkflowGraph()
@@ -178,22 +184,22 @@ str_graph.add_edge("process", END)
 
 # Execute with correct types
 int_result = int_graph.execute(GenericState[int](value=1))
-assert int_result.result == 2
+assert int_result.value == 2
 
 str_result = str_graph.execute(GenericState[str](value="test"))
-assert str_result.result == "test processed"
+assert str_result.value == "test processed"
 ```
 
 ## Improvements
 
 The latest version includes several important improvements:
 
-1. **Coroutine Handling**: Proper handling of coroutines returned by nodes
-2. **State Management**: Improved state persistence between nodes
-3. **Error Handling**: Better error propagation and handling
-4. **Type Validation**: Enhanced type checking for START and END nodes
-5. **Callback Timing**: Callbacks are now called at the correct time in the execution flow
-6. **Branch Handling**: Improved handling of async conditions in branches
+1. **Type Safety**: Enhanced type validation and generic type support
+2. **State Management**: Simplified state structure with value and data fields
+3. **Error Handling**: Consistent on_error naming and improved error propagation
+4. **Edge Objects**: Edge objects for better graph structure representation
+5. **Branch Handling**: Explicit entry nodes for conditional branches
+6. **Callback Timing**: Improved callback execution timing
 7. **Documentation**: Updated examples to match actual implementation
 
 ## Contributing
