@@ -61,18 +61,13 @@ class CompiledGraph:
         # Add conditional edges with dashed lines
         for source, branch_dict in self.branches.items():
             for _, branch in branch_dict.items():
-                # Handle the 'then' case
-                if branch.then:
-                    # Use dashed lines for conditional edges
-                    mermaid_code.append(f"    {source} -.-> {branch.then}")
-                
                 # Handle the conditional paths in 'ends'
                 if branch.ends:
                     for condition, target in branch.ends.items():
                         # Add label to the edge showing the condition
                         label = f"{condition}"
                         # Use dashed lines for conditional edges
-                        mermaid_code.append(f"    {source} -.{condition}.-> {target}")
+                        mermaid_code.append(f"    {source} -.{label}.-> {target}")
         
         mermaid_code.append("```")
         return "\n".join(mermaid_code)

@@ -105,8 +105,7 @@ def test_type_validation_with_branches(graph):
     """Test type validation with conditional branches."""
     def add1(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=state.value + 1
+            value=state.value + 1
         )
 
     def is_even(state: TestState) -> bool:
@@ -114,14 +113,12 @@ def test_type_validation_with_branches(graph):
 
     def to_str(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=str(state.value)
+            value=str(state.value)
         )
 
     def to_float(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=float(state.value)
+            value=float(state.value)
         )
 
     # Add nodes (only those returning State)
@@ -149,37 +146,39 @@ def test_mermaid_diagram_generation():
 
     def add(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=state.value + 1
+            value=state.value + 1,
         )
 
+    def check_even(state: TestState) -> TestState:
+        return TestState(
+            value=state.value,
+        )
+    
     def is_even(state: TestState) -> bool:
         return state.value % 2 == 0
 
     def handle_even(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=f"Even: {state.value}"
+            value=f"Even: {state.value}"
         )
 
     def handle_odd(state: TestState) -> TestState:
         return TestState(
-            value=state.value,
-            result=f"Odd: {state.value}"
+            value=f"Odd: {state.value}"
         )
 
     # Add nodes
     graph.add_node("add", add)
-    graph.add_node("is_even", is_even)
+    graph.add_node("check_even", check_even)
     graph.add_node("handle_even", handle_even)
     graph.add_node("handle_odd", handle_odd)
 
     graph.add_edge(START, "add")
-    graph.add_edge("add", "is_even")
+    graph.add_edge("add", "check_even")
 
     graph.add_conditional_edges(
-        "is_even",
-        path=is_even,
+        "check_even",
+        is_even,
         path_map={True: "handle_even", False: "handle_odd"}
     )
 
@@ -195,19 +194,19 @@ def test_mermaid_diagram_generation():
     assert '__start__["START"]' in mermaid
     assert '__end__["END"]' in mermaid
     assert 'add["add"]' in mermaid
-    assert 'is_even["is_even"]' in mermaid
+    assert 'check_even["check_even"]' in mermaid
     assert 'handle_even["handle_even"]' in mermaid
     assert 'handle_odd["handle_odd"]' in mermaid
 
     # Check for regular edges
     assert "__start__ --> add" in mermaid
-    assert "add --> is_even" in mermaid
+    assert "add --> check_even" in mermaid
     assert "handle_even --> __end__" in mermaid
     assert "handle_odd --> __end__" in mermaid
 
     # Check for conditional edges
-    assert "is_even -.True.-> handle_even" in mermaid
-    assert "is_even -.False.-> handle_odd" in mermaid
+    assert "check_even -.True.-> handle_even" in mermaid
+    assert "check_even -.False.-> handle_odd" in mermaid
 
 def test_compile_no_entry_point():
     """Test compiling a graph with no entry point raises ValueError."""
