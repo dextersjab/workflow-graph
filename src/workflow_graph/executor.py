@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Any, Callable
 
 from .constants import START, END
-from .models import Branch, Node, State
+from .models import Branch, Node, State, Edge
 from .exceptions import ExecutionError, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -22,17 +22,18 @@ class CompiledGraph:
     def __init__(
         self, 
         nodes: dict[str, Node], 
-        edges: set[tuple[str, str, Callable[[str, str, Any], None] | None]], # use the `Edge` type?
+        edges: dict[str, set[Edge]], 
         branches: dict[str, dict[str, Branch]]
     ):
         """Initialize a compiled graph."""
         self.nodes = nodes
         self.edges = defaultdict(list)
         self.edge_callbacks = defaultdict(dict)
-        for start, end, callback in edges:
-            self.edges[start].append(end)
-            if callback is not None:
-                self.edge_callbacks[start][end] = callback
+        for start, edge_set in edges.items():
+            for edge in edge_set:
+                self.edges[start].append(edge.target)
+                if edge.callback is not None:
+                    self.edge_callbacks[start][edge.target] = edge.callback
         self.branches = branches
         self.compiled = False
 

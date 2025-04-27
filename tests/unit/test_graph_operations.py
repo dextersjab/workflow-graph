@@ -6,6 +6,7 @@ from typing import Any
 from workflow_graph.builder import WorkflowGraph
 from workflow_graph.constants import START, END
 from workflow_graph.exceptions import (
+    InvalidEdgeError,
     InvalidNodeNameError,
     TypeMismatchError,
     ValidationError,
@@ -43,11 +44,11 @@ def test_add_edge(graph):
     assert any(edge.source == "node1" and edge.target == "node2" for edge in graph.edges["node1"])
 
     # Test adding edge from non-existent node
-    with pytest.raises(ValidationError):
+    with pytest.raises(InvalidEdgeError):
         graph.add_edge("non_existent", "node2")
 
     # Test adding edge to non-existent node
-    with pytest.raises(ValidationError):
+    with pytest.raises(InvalidEdgeError):
         graph.add_edge("node1", "non_existent")
 
 def test_conditional_edges(graph):

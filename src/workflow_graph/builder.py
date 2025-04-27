@@ -14,10 +14,11 @@ from collections import deque
 import inspect
 
 from .constants import START, END
-from .models import Branch, Node, State
+from .models import Branch, Node, State, Edge
 from .executor import CompiledGraph
 from .exceptions import (
     InvalidEdgeError,
+    InvalidNodeNameError,
     TypeMismatchError,
 )
 
@@ -36,14 +37,18 @@ class WorkflowGraph(Generic[T]):
     def __init__(self) -> None:
         """Initialize a new workflow graph builder."""
         self.nodes: dict[str, Node] = {}
-        self.edges = set[tuple[str, str, Callable[[str, str, Any], None] | None]]()
+        self.edges: dict[str, set[Edge]] = defaultdict(set)
         self.branches: defaultdict[str, dict[str, Branch]] = defaultdict(dict)
         self.compiled = False
 
     @property
     def _all_edges(self) -> set[tuple[str, str, Callable[[str, str, Any], None] | None]]:
-        """Return all edges in the graph."""
-        return self.edges
+        """Return all edges in the graph as tuples for backward compatibility."""
+        all_edges = set()
+        for start, edge_set in self.edges.items():
+            for edge in edge_set:
+                all_edges.add((start, edge.target, edge.callback))
+        return all_edges
 
     def add_node(
         self,
@@ -73,9 +78,9 @@ class WorkflowGraph(Generic[T]):
             output_type: Expected output type
         """
         if name in [START, END]:
-            raise ValueError(f"Node name '{name}' is reserved")
+            raise InvalidNodeNameError(f"Node name '{name}' is reserved")
         if name in self.nodes:
-            raise ValueError(f"Node '{name}' already exists")
+            raise InvalidNodeNameError(f"Node '{name}' already exists")
         
         # Validate that the function returns a State object
         return_annotation = inspect.signature(func).return_annotation
@@ -160,7 +165,8 @@ class WorkflowGraph(Generic[T]):
                         f"'{end_key}' expects {end_node.input_type.__name__}"
                     )
 
-        self.edges.add((start_key, end_key, callback))
+        edge = Edge(source=start_key, target=end_key, callback=callback)
+        self.edges[start_key].add(edge)
 
     def add_conditional_edges(
         self,
@@ -231,6 +237,12 @@ class WorkflowGraph(Generic[T]):
         # Add branch to graph
         self.branches[source][name] = branch
 
+        # Add edges for each path in the branch
+        if path_map:
+            for target in path_map.values():
+                edge = Edge(source=source, target=target, callback=callback, branch=branch)
+                self.edges[source].add(edge)
+
     def validate(self) -> None:
         """Validate the graph structure."""
         # Check for at least one entry point
@@ -267,9 +279,10 @@ class WorkflowGraph(Generic[T]):
                 visited.add(node)
                 
                 # Add all nodes reachable from outgoing edges
-                for src, dest, _ in self.edges:
-                    if src == node and dest != END:
-                        queue.append(dest)
+                if node in self.edges:
+                    for edge in self.edges[node]:
+                        if edge.target != END:
+                            queue.append(edge.target)
                 
                 # Add all nodes reachable from branches
                 if node in self.branches:
@@ -304,8 +317,8 @@ class WorkflowGraph(Generic[T]):
             
             # Check edges
             if node in self.edges:
-                for dest, _, _ in self.edges:
-                    if dest != END and visit(dest):
+                for edge in self.edges[node]:
+                    if edge.target != END and visit(edge.target):
                         return True
             
             # Check branches
@@ -358,19 +371,18 @@ class WorkflowGraph(Generic[T]):
             queue = deque()
 
             # Add entry points from direct edges (START -> node)
-            for src, dst, _ in self.edges:
-                if src == START and dst != END:
-                    if dst not in queue:
-                        queue.append(dst)
+            if START in self.edges:
+                for edge in self.edges[START]:
+                    if edge.target != END and edge.target not in queue:
+                        queue.append(edge.target)
 
             # Add entry points from conditional branches starting at START
             if START in self.branches:
                 for _branch_id, branch in self.branches[START].items():
                     if branch.ends:
                         for _path_val, dest in branch.ends.items():
-                            if dest != END:
-                                if dest not in queue:
-                                     queue.append(dest)
+                            if dest != END and dest not in queue:
+                                queue.append(dest)
             
             visited.add(START)
 
@@ -382,19 +394,18 @@ class WorkflowGraph(Generic[T]):
                 visited.add(node)
 
                 # Add nodes reachable from direct edges
-                for start_node, end_node, _ in self.edges:
-                    if start_node == node and end_node != END:
-                        if end_node not in visited:
-                            queue.append(end_node)
+                if node in self.edges:
+                    for edge in self.edges[node]:
+                        if edge.target != END and edge.target not in visited:
+                            queue.append(edge.target)
 
                 # Add nodes reachable from conditional branches
                 if node in self.branches:
                     for _branch_id, branch in self.branches[node].items():
                         if branch.ends:
                             for path_val, dest in branch.ends.items():
-                                if dest != END:
-                                    if dest not in visited:
-                                        queue.append(dest)
+                                if dest != END and dest not in visited:
+                                    queue.append(dest)
 
             all_defined_nodes = set(self.nodes.keys())
             reachable_nodes = visited - {START, END}

@@ -64,10 +64,33 @@ class Branch[T]:
 
 @dataclass
 class Edge:
-    """An edge in the workflow graph."""
+    """An edge in the workflow graph.
+    
+    Attributes:
+        source: The source node name
+        target: The target node name
+        callback: Optional callback function that receives (source, target, state)
+        branch: Optional branch that this edge is part of
+    """
     source: str
     target: str
+    callback: Callable[[str, str, Any], None] | None = None
     branch: Branch[Any] | None = None
+
+    def __hash__(self) -> int:
+        """Make Edge hashable for use in sets."""
+        return hash((self.source, self.target, self.callback, self.branch))
+
+    def __eq__(self, other: object) -> bool:
+        """Compare edges for equality."""
+        if not isinstance(other, Edge):
+            return False
+        return (
+            self.source == other.source
+            and self.target == other.target
+            and self.callback == other.callback
+            and self.branch == other.branch
+        )
 
 @dataclass
 class Node(Generic[T]):

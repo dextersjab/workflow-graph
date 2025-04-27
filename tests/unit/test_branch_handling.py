@@ -3,7 +3,7 @@ import pytest
 import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Optional, List
-from workflow_graph import START, END, State
+from workflow_graph import START, END, State, Edge
 import traceback
 
 @dataclass
