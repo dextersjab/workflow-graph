@@ -134,7 +134,6 @@ class WorkflowGraph(Generic[T]):
             
         Raises:
             ValueError: If using reserved nodes incorrectly
-            TypeMismatchError: If the output type of the source node doesn't match the input type of the destination node
         """
         if self.compiled:
             logger.warning(
@@ -149,22 +148,6 @@ class WorkflowGraph(Generic[T]):
             raise InvalidEdgeError(f"Start node '{start_key}' does not exist")
         if end_key not in self.nodes and end_key != END:
             raise InvalidEdgeError(f"End node '{end_key}' does not exist")
-
-        # Skip type validation for START and END nodes
-        if start_key != START and end_key != END:
-            # Get type hints for both nodes
-            start_node = self.nodes[start_key]
-            end_node = self.nodes[end_key]
-            
-            # If either node has no type hints, skip validation
-            if start_node.output_type is not None and end_node.input_type is not None:
-                # Check if the output type of the source node is compatible with the input type of the destination node
-                if not issubclass(start_node.output_type, end_node.input_type):
-                    raise TypeMismatchError(
-                        f"Type mismatch between nodes '{start_key}' and '{end_key}': "
-                        f"'{start_key}' outputs {start_node.output_type.__name__} but "
-                        f"'{end_key}' expects {end_node.input_type.__name__}"
-                    )
 
         edge = Edge(source=start_key, target=end_key, callback=callback)
         self.edges[start_key].add(edge)
@@ -343,6 +326,7 @@ class WorkflowGraph(Generic[T]):
             
         Raises:
             ValueError: If validation fails or no entry point is defined
+            ValidationError: If type validation fails
         """
         self.validate()
         
@@ -366,59 +350,13 @@ class WorkflowGraph(Generic[T]):
                 f"Graph must have at least one finish point defined by adding an edge to '{END}' or a conditional edge to '{END}'"
             )
 
-        # Check for unreachable nodes
-        if len(self.nodes) > 0:
-            visited = set()
-            queue = deque()
-
-            # Add entry points from direct edges (START -> node)
-            if START in self.edges:
-                for edge in self.edges[START]:
-                    if edge.target != END and edge.target not in queue:
-                        queue.append(edge.target)
-
-            # Add entry points from conditional branches starting at START
-            if START in self.branches:
-                for _branch_id, branch in self.branches[START].items():
-                    if branch.ends:
-                        for _path_val, dest in branch.ends.items():
-                            if dest != END and dest not in queue:
-                                queue.append(dest)
-            
-            visited.add(START)
-
-            while queue:
-                node = queue.popleft()
-                if node in visited:
-                    continue
-                
-                visited.add(node)
-
-                # Add nodes reachable from direct edges
-                if node in self.edges:
-                    for edge in self.edges[node]:
-                        if edge.target != END and edge.target not in visited:
-                            queue.append(edge.target)
-
-                # Add nodes reachable from conditional branches
-                if node in self.branches:
-                    for _branch_id, branch in self.branches[node].items():
-                        if branch.ends:
-                            for path_val, dest in branch.ends.items():
-                                if dest != END and dest not in visited:
-                                    queue.append(dest)
-
-            all_defined_nodes = set(self.nodes.keys())
-            reachable_nodes = visited - {START, END}
-            unreachable = all_defined_nodes - reachable_nodes
-            if unreachable:
-                raise ValueError(f"Unreachable nodes detected: {', '.join(sorted(list(unreachable)))}")
-            
+        # Create compiled graph and validate it
         compiled = CompiledGraph(
             nodes=self.nodes,
             edges=self.edges,
             branches=self.branches
         )
+        compiled.validate()  # This will check type consistency
         return compiled
 
     def execute(self, data: Any) -> State:

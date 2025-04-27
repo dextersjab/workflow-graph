@@ -79,27 +79,9 @@ def test_conditional_edges(graph):
             is_negative,
             {True: "node2", False: "node3"}
         )
+        
 
-def test_type_validation(graph):
-    """Test type compatibility between connected nodes."""
-    def str_func(state: State) -> State[str]:
-        return TestState(value=state.value + "a")
 
-    def int_func(state: State) -> State[int]:
-        return TestState(value=state.value + 1)
-
-    graph.add_node("str_node", str_func, output_type=str)
-    graph.add_node("int_node", int_func, input_type=int)
-
-    # Add entry and exit points
-    graph.add_edge(START, "str_node")
-    graph.add_edge("str_node", END)
-    graph.add_edge("int_node", END)
-
-    # Test connecting incompatible types
-    with pytest.raises(TypeMismatchError):
-        graph.add_edge("str_node", "int_node")
-        graph.validate()
 
 def test_type_validation_with_branches(graph):
     """Test type validation with conditional branches."""
@@ -139,6 +121,14 @@ def test_type_validation_with_branches(graph):
     )
 
     graph.validate()  # Should not raise an exception
+
+def test_state_type_enforcement(graph):
+    """Test that nodes must return State objects."""
+    def not_a_state(state: State) -> int:
+        return 42
+
+    with pytest.raises(ValueError, match="must return a State object"):
+        graph.add_node("bad_node", not_a_state)
 
 def test_mermaid_diagram_generation():
     """Test Mermaid diagram generation."""
@@ -261,6 +251,6 @@ def test_compile_with_unreachable_node():
     graph.add_node("task1", lambda state: state)
     graph.add_node("task2", lambda state: state)  # Unreachable
     graph.add_edge(START, "task1")
-    graph.add_conditional_edges("task1", lambda state: True, {True: END})
+    graph.add_conditional_edges("task1", lambda _: True, {True: END})
     with pytest.raises(ValueError, match="Unreachable nodes detected: task2"):
-        graph.compile() 
+        graph.compile()

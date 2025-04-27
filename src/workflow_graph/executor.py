@@ -3,7 +3,8 @@
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Any, Callable
+from typing import Any, Callable, get_args, get_origin
+import inspect
 
 from .constants import START, END
 from .models import Branch, Node, State, Edge
@@ -116,29 +117,90 @@ class CompiledGraph:
             if unreachable:
                 raise ValueError(f"Unreachable nodes detected: {', '.join(unreachable)}")
         
-        # Validate type consistency
-        def get_node_type(node_name: str) -> type:
+        # Helper functions for type validation
+        def get_node_output_type(node_name: str) -> type | None:
+            """Get the output type of a node."""
             if node_name == START or node_name == END:
                 return Any
-            return self.nodes[node_name].output_type
+            node = self.nodes[node_name]
+            # First try to get from output_type hint
+            if node.output_type is not None:
+                return node.output_type
+            # Then try to infer from function return type
+            sig = inspect.signature(node.func)
+            if sig.return_annotation != inspect.Signature.empty:
+                return sig.return_annotation
+            return None
+
+        def get_node_input_type(node_name: str) -> type | None:
+            """Get the input type of a node."""
+            if node_name == START or node_name == END:
+                return Any
+            node = self.nodes[node_name]
+            # First try to get from input_type hint
+            if node.input_type is not None:
+                return node.input_type
+            # Then try to infer from function parameter type
+            sig = inspect.signature(node.func)
+            if len(sig.parameters) > 0:
+                param = next(iter(sig.parameters.values()))
+                if param.annotation != inspect.Signature.empty:
+                    return param.annotation
+            return None
+
+        def check_type_compatibility(source: str, dest: str, context: str = "") -> None:
+            """Check if types are compatible between two nodes."""
+            # Skip type checks for END nodes only
+            if dest == END:
+                return
+
+            source_output = get_node_output_type(source)
+            dest_input = get_node_input_type(dest)
+            
+            if source_output is not None and dest_input is not None:
+                # Get the base type (e.g., State[int] -> State)
+                source_base = get_origin(source_output) or source_output
+                dest_base = get_origin(dest_input) or dest_input
+                
+                # If source is Any, it's compatible with any State type
+                if source_output == Any:
+                    return
+                    
+                # Check if both are State types
+                if not (issubclass(source_base, State) and issubclass(dest_base, State)):
+                    raise ValidationError(
+                        f"Type mismatch {context}: {source} ({source_base}) -> {dest} ({dest_base})"
+                    )
+                    
+                # Get type parameters
+                source_args = get_args(source_output)
+                dest_args = get_args(dest_input)
+                
+                # If either has no type parameters, they're compatible
+                if not source_args or not dest_args:
+                    return
+                    
+                # Check if type parameters are compatible
+                if source_args != dest_args:
+                    raise ValidationError(
+                        f"Type parameter mismatch {context}: {source} ({source_args}) -> {dest} ({dest_args})"
+                    )
         
         # Check each edge for type compatibility
         for source, destinations in self.edges.items():
-            source_type = get_node_type(source)
             for dest in destinations:
-                dest_type = get_node_type(dest)
-                if source_type != Any and dest_type != Any and source_type != dest_type:
-                    raise ValidationError(f"Type mismatch between nodes: {source} ({source_type}) -> {dest} ({dest_type})")
+                check_type_compatibility(source, dest, "in edge")
         
         # Check each branch for type compatibility
         for source, branches in self.branches.items():
-            source_type = get_node_type(source)
             for branch_name, branch in branches.items():
                 if branch.ends:
                     for condition_value, dest in branch.ends.items():
-                        dest_type = get_node_type(dest)
-                        if source_type != Any and dest_type != Any and source_type != dest_type:
-                            raise ValidationError(f"Type mismatch in branch {branch_name}: {source} ({source_type}) -> {dest} ({dest_type})")
+                        check_type_compatibility(
+                            source, 
+                            dest, 
+                            f"in branch '{branch_name}' (condition={condition_value})"
+                        )
         
         return self
 
@@ -356,6 +418,8 @@ class CompiledGraph:
                         await self.nodes[current_node].on_error(e, state)
                     else:
                         self.nodes[current_node].on_error(e, state)
+                # Always raise the error after logging and error handling
+                raise ExecutionError(f"Node {current_node} failed: {str(e)}")
                     
         return state
 
@@ -363,7 +427,7 @@ class CompiledGraph:
         """Execute the workflow graph synchronously."""
         try:
             loop = asyncio.get_running_loop()
-        except RuntimeError as e:
+        except RuntimeError:
             # No running loop, create a new one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -372,9 +436,10 @@ class CompiledGraph:
                 return result
             finally:
                 loop.close()
+                asyncio.set_event_loop(None)
         else:
             # Running loop exists, use it
-            return loop.run_until_complete(self.execute_async(input_data, callback)) 
+            return loop.run_until_complete(self.execute_async(input_data, callback))
 
     async def _execute_node(self, node_name: str, data: Any) -> Any:
         """Execute a single node in the graph."""
