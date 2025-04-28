@@ -5,44 +5,34 @@ as directed graphs. It supports conditional branching, error handling, and
 type validation.
 """
 
-from typing import Any, Callable, TypeVar, Optional, Generic
+from typing import TypeVar
 
-# Version
-__version__ = "0.3.1"
-
-# Core components
 from .builder import WorkflowGraph
+from .constants import END, START
+from .exceptions import (
+    DuplicateNodeError,
+    ExecutionError,
+    InvalidEdgeError,
+    InvalidNodeNameError,
+    TypeMismatchError,
+    ValidationError,
+    WorkflowGraphError,
+)
 from .executor import CompiledGraph
 from .models import (
-    Node,
-    Edge,
     Branch,
+    Edge,
+    Node,
     State,
+)
+from .utils import (
+    get_first_param_type_hint,
+    get_return_type_hint,
+    is_type_compatible,
 )
 
 # Type utilities
 T = TypeVar("T")
-
-# Exceptions
-from .exceptions import (
-    WorkflowGraphError,
-    InvalidNodeNameError,
-    DuplicateNodeError,
-    InvalidEdgeError,
-    TypeMismatchError,
-    ExecutionError,
-    ValidationError,
-)
-
-# Type validation utilities
-from .utils import (
-    get_return_type_hint,
-    get_first_param_type_hint,
-    is_type_compatible,
-)
-
-# Constants
-from .constants import START, END
 
 __all__ = [
     # Core components
@@ -70,4 +60,4 @@ __all__ = [
     # Constants
     "START",
     "END",
-] 
+]

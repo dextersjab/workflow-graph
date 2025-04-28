@@ -1,8 +1,10 @@
 """Utility functions for workflow graph."""
+
 import inspect
 from typing import Any, Callable, Type, TypeVar, get_type_hints
 
 T = TypeVar("T")
+
 
 def get_return_type_hint(func: Callable[..., Any]) -> Type[Any] | None:
     """Get the return type hint of a function."""
@@ -11,6 +13,7 @@ def get_return_type_hint(func: Callable[..., Any]) -> Type[Any] | None:
         return hints.get("return")
     except Exception:
         return None
+
 
 def get_first_param_type_hint(func: Callable[..., Any]) -> Type[Any] | None:
     """Get the type hint of the first parameter of a function."""
@@ -21,6 +24,7 @@ def get_first_param_type_hint(func: Callable[..., Any]) -> Type[Any] | None:
         return hints.get(first_param)
     except Exception:
         return None
+
 
 def is_type_compatible(type1: Type[Any], type2: Type[Any]) -> bool:
     """Check if two types are compatible."""
@@ -36,4 +40,4 @@ def is_type_compatible(type1: Type[Any], type2: Type[Any]) -> bool:
             return args1 == args2
         return True
     # Handle non-generic types
-    return issubclass(type1, type2) or issubclass(type2, type1) 
+    return issubclass(type1, type2) or issubclass(type2, type1)

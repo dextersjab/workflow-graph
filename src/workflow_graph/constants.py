@@ -2,4 +2,4 @@
 
 # Special node names
 START = "__start__"
-END = "__end__" 
+END = "__end__"

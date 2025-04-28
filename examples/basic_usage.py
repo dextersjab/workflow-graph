@@ -1,26 +1,43 @@
+"""Example demonstrating basic usage of the workflow-graph package.
+
+This example shows how to create a simple workflow that:
+1. Adds one to a number
+2. Checks if the result is even or odd
+3. Processes the number differently based on its parity
+"""
+
 import asyncio
-from workflow_graph import WorkflowGraph, START, END, State
 import sys
+
+from workflow_graph import END, START, State, WorkflowGraph
 
 # define your state class
 NumberProcessingState = State[int]
 
-# define basic nodes which each return the updated state
+
 def add_one(state: NumberProcessingState) -> NumberProcessingState:
+    """Add one to the current state value."""
     return state.updated(value=state.value + 1)
 
+
 def process_even_number(state: NumberProcessingState) -> NumberProcessingState:
+    """Process an even number by appending 'even' to its string representation."""
     return state.updated(value=f"{state.value}, even")
 
+
 def process_odd_number(state: NumberProcessingState) -> NumberProcessingState:
+    """Process an odd number by appending 'odd' to its string representation."""
     return state.updated(value=f"{state.value}, odd")
+
 
 # create the workflow graph
 add_one_and_classify_workflow = WorkflowGraph()
 
 # add nodes to the graph
 add_one_and_classify_workflow.add_node("add_one", add_one)
-add_one_and_classify_workflow.add_node("check_if_even", lambda state: state)  # Entry node
+add_one_and_classify_workflow.add_node(
+    "check_if_even", lambda state: state
+)  # Entry node
 add_one_and_classify_workflow.add_node("process_even_number", process_even_number)
 add_one_and_classify_workflow.add_node("process_odd_number", process_odd_number)
 
@@ -33,7 +50,7 @@ add_one_and_classify_workflow.add_edge("add_one", "check_if_even")
 add_one_and_classify_workflow.add_conditional_edges(
     "check_if_even",
     lambda state: state.value % 2 == 0,
-    path_map={True: "process_even_number", False: "process_odd_number"}
+    path_map={True: "process_even_number", False: "process_odd_number"},
 )
 
 # set fixed finish points
@@ -48,20 +65,29 @@ print("\nMermaid diagram representation:\n")
 print(add_one_and_classify_workflow.to_mermaid())
 print("\n")
 
+
 # run the workflow
 async def run_workflow(input_value: int, delay: float = 0.0):
-    print(f"---")
+    """Run the workflow with the given input value and optional delay.
+
+    Args:
+        input_value: The initial number to process
+        delay: Optional delay between steps in seconds
+    """
+    print("---")
     print(f"Input value: {input_value}")
     initial_state = NumberProcessingState(value=input_value)
 
-    spinner = ['|', '/', '-', '\\']
+    spinner = ["|", "/", "-", "\\"]
     spinner_index = 0
     running = True
 
     async def spinner_task():
         nonlocal spinner_index
         while running:
-            sys.stdout.write(f"\r{input_value} -[add_one_and_classify]-> {spinner[spinner_index % len(spinner)]}")
+            sys.stdout.write(
+                f"\r{input_value} -[add_one_and_classify]-> {spinner[spinner_index % len(spinner)]}"
+            )
             sys.stdout.flush()
             spinner_index += 1
             await asyncio.sleep(0.1)
@@ -74,7 +100,8 @@ async def run_workflow(input_value: int, delay: float = 0.0):
 
     sys.stdout.write(f"\r{input_value} -[add_one_and_classify]-> {result.value}\n")
     sys.stdout.flush()
-    print(f"---\n")
+    print("---\n")
+
 
 # run the workflow with different inputs
 # simulate real workflows by faking delays

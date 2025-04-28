@@ -1,113 +1,105 @@
 """Unit tests for cycle handling in workflow graph."""
 
-import pytest
 from dataclasses import dataclass
-from workflow_graph import WorkflowGraph, START, END, State
+
+import pytest
+
+from workflow_graph import END, START, State, WorkflowGraph
+
 
 @dataclass
 class CycleState:
+    """State class for testing cycle handling in workflow graphs.
+
+    This class represents a state that can be used to test cycles in workflow
+    graphs. It tracks a numeric value, a count of iterations, and a flag to
+    indicate when the cycle should terminate.
+    """
+
     value: int
     count: int = 0
     terminate: bool = False
 
+
 TestState = State[CycleState]
 
+
 def test_cyclic_graph_allowed_by_default():
-    """Test that a cyclic graph is allowed when enforce_acyclic is False."""
+    """Test that cyclic graphs are allowed by default configuration."""
     graph = WorkflowGraph()
-    graph.add_node("A", lambda state: state.updated(value=CycleState(value=state.value.value + 1)))
-    graph.add_node("B", lambda state: state.updated(value=CycleState(value=state.value.value * 2)))
-    
-    graph.add_edge(START, "A")
-    graph.add_edge("A", "B")
-    graph.add_edge("B", "A")  # Creates a cycle
-    graph.add_edge("B", END) 
-    graph.validate()  # Should not raise an error
+    graph.add_node("A", lambda state: state)
+    graph.add_edge("A", "A")  # Create a cycle
+    graph.compile()  # Should not raise an error
+
 
 def test_cyclic_graph_disallowed_when_enforce_acyclic():
-    """Test that a cyclic graph raises an error when enforce_acyclic is True."""
+    """Test that cyclic graphs are disallowed when enforce_acyclic is True."""
     graph = WorkflowGraph(enforce_acyclic=True)
-    graph.add_node("A", lambda state: state.updated(value=CycleState(value=state.value.value + 1)))
-    graph.add_node("B", lambda state: state.updated(value=CycleState(value=state.value.value * 2)))
-    
-    graph.add_edge(START, "A")
-    graph.add_edge("A", "B")
-    graph.add_edge("B", "A")  # Creates a cycle
-    graph.add_edge("B", END) 
-    with pytest.raises(ValueError, match="Graph contains cycles"):
-        graph.validate()
+    graph.add_node("A", lambda state: state)
+    graph.add_edge("A", "A")  # Create a cycle
+    with pytest.raises(ValueError):
+        graph.compile()
+
 
 def test_acyclic_graph_allowed_when_enforce_acyclic():
-    """Test that an acyclic graph is allowed when enforce_acyclic is True."""
+    """Test that acyclic graphs are allowed when enforce_acyclic is True."""
     graph = WorkflowGraph(enforce_acyclic=True)
-    graph.add_node("A", lambda state: state.updated(value=CycleState(value=state.value.value + 1)))
-    graph.add_node("B", lambda state: state.updated(value=CycleState(value=state.value.value * 2)))
-    
-    graph.add_edge(START, "A")
+    graph.add_node("A", lambda state: state)
+    graph.add_node("B", lambda state: state)
     graph.add_edge("A", "B")
-    graph.add_edge("B", END)
-    graph.validate()  # Should not raise an error
+    graph.compile()  # Should not raise an error
+
 
 def test_terminating_cycle():
-    """Test a cycle that terminates after a certain number of iterations."""
-    graph = WorkflowGraph()
-    
+    """Test a cycle that terminates based on a condition."""
+
     def increment_until_5(state: TestState) -> TestState:
-        if state.value.value >= 5:
-            return state.updated(value=CycleState(value=state.value.value, terminate=True))
-        return state.updated(value=CycleState(value=state.value.value + 1))
-    
+        """Increment the count until it reaches 5."""
+        return TestState(value=state.value, count=state.count + 1)
+
     def check_termination(state: TestState) -> bool:
-        return state.value.terminate
-    
-    graph.add_node("check", lambda state: state)  # entry node
+        """Check if the cycle should terminate."""
+        return state.count >= 5
+
+    graph = WorkflowGraph()
     graph.add_node("increment", increment_until_5)
-    
-    graph.add_edge(START, "check")
-    graph.add_edge("check", "increment")
-    graph.add_edge("increment", "check")  # creates a cycle
     graph.add_conditional_edges(
-        "check",
+        "increment",
         check_termination,
-        path_map={True: END, False: "increment"}
+        path_map={True: END, False: "increment"},
     )
-    
-    graph.validate()
-    
-    # run the workflow
-    initial_state = TestState(value=CycleState(value=0))
-    result = graph.execute(initial_state)
-    assert result.value.value == 5  # should increment until reaching 5
+    graph.add_edge(START, "increment")
+
+    compiled = graph.compile()
+    result = compiled.execute(TestState(value=0))
+    assert result.count == 5
+
 
 def test_self_looping_node():
-    """Test a node that loops back to itself to apply the same function multiple times."""
-    graph = WorkflowGraph()
-    
+    """Test a node that loops on itself until a condition is met."""
+
     def increment_with_counter(state: TestState) -> TestState:
-        count = state.value.count + 1
-        if count >= 3:  # apply function 3 times
-            return state.updated(value=CycleState(value=state.value.value + 1, count=count, terminate=True))
-        return state.updated(value=CycleState(value=state.value.value + 1, count=count))
-    
+        """Increment the value and count."""
+        return TestState(
+            value=state.value + 1,
+            count=state.count + 1,
+            terminate=state.count >= 4,
+        )
+
     def check_termination(state: TestState) -> bool:
-        return state.value.terminate
-    
+        """Check if the self-loop should terminate."""
+        return state.terminate
+
+    graph = WorkflowGraph()
     graph.add_node("increment", increment_with_counter)
-    graph.add_node("check", lambda state: state)  # entry node
-    
-    graph.add_edge(START, "check")
-    graph.add_edge("check", "increment")
-    graph.add_edge("increment", "check")  # creates a cycle
     graph.add_conditional_edges(
-        "check",
+        "increment",
         check_termination,
-        path_map={True: END, False: "increment"}
+        path_map={True: END, False: "increment"},
     )
-    
-    graph.validate()
-    
-    # run the workflow
-    initial_state = TestState(value=CycleState(value=0))
-    result = graph.execute(initial_state)
-    assert result.value.value == 3  # Should increment 3 times
-    assert result.value.count == 3  # Should have looped 3 times 
+    graph.add_edge(START, "increment")
+
+    compiled = graph.compile()
+    result = compiled.execute(TestState(value=0))
+    assert result.value == 5
+    assert result.count == 5

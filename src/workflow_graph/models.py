@@ -2,22 +2,21 @@
 
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Generic, Optional, TypeVar
-import typing
-import inspect
-from typing import get_origin
 
 T = TypeVar("T")
+
 
 @dataclass
 class State(Generic[T]):
     """State of a workflow graph execution.
-    
+
     Attributes:
         value: The current value being processed through the workflow
         current_node: Name of the current node being executed
         trajectory: List of nodes traversed during execution
         errors: List of error messages encountered during execution
     """
+
     value: T | None
     current_node: str | None = None
     trajectory: list[str] = field(default_factory=list)
@@ -25,11 +24,11 @@ class State(Generic[T]):
 
     def add_error(self, error: Exception, node: str | None = None) -> "State[T]":
         """Return a new State with an added error message.
-        
+
         Args:
             error: The exception that occurred
             node: Optional name of the node where the error occurred
-            
+
         Returns:
             A new State instance with the error message added
         """
@@ -41,13 +40,13 @@ class State(Generic[T]):
 
     def updated(self, **kwargs) -> "State[T]":
         """Return a new State with updated fields (immutable pattern).
-        
+
         This method automatically handles copying of mutable fields (trajectory, errors)
         to ensure immutability.
-        
+
         Args:
             **kwargs: Field names and values to update
-            
+
         Returns:
             A new State instance with the specified fields updated
         """
@@ -56,17 +55,18 @@ class State(Generic[T]):
             kwargs["trajectory"] = kwargs["trajectory"].copy()
         if "errors" in kwargs and isinstance(kwargs["errors"], list):
             kwargs["errors"] = kwargs["errors"].copy()
-            
+
         return replace(self, **kwargs)
 
     def __str__(self) -> str:
-        """String representation of the state."""
+        """Return a string representation of the state."""
         return f"State(value={self.value}, current_node={self.current_node}, trajectory={self.trajectory}, errors={self.errors})"
 
+
 @dataclass
-class Branch[T]:
+class Branch(Generic[T]):
     """A branch in the workflow graph that defines conditional execution paths.
-    
+
     Attributes:
         source: The source node name
         branch_id: Unique identifier for this branch
@@ -74,22 +74,25 @@ class Branch[T]:
         ends: Mapping of condition results to destination node names
         callback: Optional callback function that receives (source, target, state)
     """
+
     source: str
     branch_id: str
     condition: Callable[[T], Any]
     ends: dict[Any, str] | None = None
     callback: Callable[[str, str, Any], None] | None = None
 
+
 @dataclass
 class Edge:
     """An edge in the workflow graph.
-    
+
     Attributes:
         source: The source node name
         target: The target node name
         callback: Optional callback function that receives (source, target, state)
         branch: Optional branch that this edge is part of
     """
+
     source: str
     target: str
     callback: Callable[[str, str, Any], None] | None = None
@@ -109,9 +112,11 @@ class Edge:
             and self.callback == other.callback
         )
 
+
 @dataclass
 class Node(Generic[T]):
     """A node in the workflow graph."""
+
     name: str
     func: Callable[[T], T]
     callback: Optional[Callable[[T], None]] = None
@@ -122,22 +127,3 @@ class Node(Generic[T]):
     metadata: Optional[dict[str, Any]] = None
     input_type: Optional[type[T]] = None
     output_type: Optional[type[T]] = None
-
-    def add_node(self):
-        try:
-            hints = typing.get_type_hints(self.func)
-            return_annotation = hints.get('return', inspect.Signature.empty)
-        except Exception:
-            # fallback if get_type_hints fails
-            return_annotation = inspect.signature(self.func).return_annotation
-
-        if return_annotation != inspect.Signature.empty:
-            base_type = get_origin(return_annotation) or return_annotation
-            if not isinstance(base_type, type):
-                raise TypeError(
-                    f"Node function '{self.name}' must return a State subclass, but got: {base_type!r}."
-                )
-            if not issubclass(base_type, State):
-                raise ValueError(
-                    f"Node function '{self.name}' must return a State object or subclass, got {return_annotation}"
-                ) 

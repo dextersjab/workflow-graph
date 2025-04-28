@@ -1,24 +1,24 @@
 """Tests for graph operations."""
-import pytest
-from dataclasses import dataclass
-from typing import Any
 
+import pytest
+
+from workflow_graph import State
 from workflow_graph.builder import WorkflowGraph
-from workflow_graph.constants import START, END
+from workflow_graph.constants import END, START
 from workflow_graph.exceptions import (
     InvalidEdgeError,
     InvalidNodeNameError,
-    TypeMismatchError,
     ValidationError,
 )
-from workflow_graph import Edge, State
 
 TestState = State[int]
+
 
 @pytest.fixture
 def graph():
     """Create a new workflow graph for each test."""
     return WorkflowGraph()
+
 
 def test_add_node_validation(graph):
     """Test validation rules for adding nodes."""
@@ -30,6 +30,7 @@ def test_add_node_validation(graph):
     graph.add_node("node1", lambda x: x)
     assert "node1" in graph.nodes
 
+
 def test_add_edge(graph):
     """Test adding edges between nodes."""
     graph.add_node("node1", lambda x: x.updated(value=x.value + 1))
@@ -37,7 +38,10 @@ def test_add_edge(graph):
 
     # Test adding valid edge
     graph.add_edge("node1", "node2")
-    assert any(edge.source == "node1" and edge.target == "node2" for edge in graph.edges["node1"])
+    assert any(
+        edge.source == "node1" and edge.target == "node2"
+        for edge in graph.edges["node1"]
+    )
 
     # Test adding edge from non-existent node
     with pytest.raises(InvalidEdgeError):
@@ -47,8 +51,10 @@ def test_add_edge(graph):
     with pytest.raises(InvalidEdgeError):
         graph.add_edge("node1", "non_existent")
 
+
 def test_conditional_edges(graph):
     """Test adding conditional edges."""
+
     def is_positive(x: int) -> bool:
         return x > 0
 
@@ -60,11 +66,7 @@ def test_conditional_edges(graph):
     graph.add_node("node3", lambda x: x.updated(value=x.value - 1))
 
     # Test adding conditional edges
-    graph.add_conditional_edges(
-        "node1",
-        is_positive,
-        {True: "node2", False: "node3"}
-    )
+    graph.add_conditional_edges("node1", is_positive, {True: "node2", False: "node3"})
 
     assert len(graph.branches["node1"]) == 1
     assert "is_positive" in graph.branches["node1"]
@@ -72,13 +74,13 @@ def test_conditional_edges(graph):
     # Test adding conditional edges from non-existent node
     with pytest.raises(InvalidNodeNameError):
         graph.add_conditional_edges(
-            "non_existent",
-            is_negative,
-            {True: "node2", False: "node3"}
+            "non_existent", is_negative, {True: "node2", False: "node3"}
         )
+
 
 def test_type_validation_with_branches(graph):
     """Test type validation with conditional branches."""
+
     def add1(state: TestState) -> TestState:
         return state.updated(value=state.value + 1)
 
@@ -103,20 +105,21 @@ def test_type_validation_with_branches(graph):
 
     # Use is_even as a branch condition, not a node
     graph.add_conditional_edges(
-        "add1",
-        condition=is_even,
-        path_map={True: "to_str", False: "to_float"}
+        "add1", condition=is_even, path_map={True: "to_str", False: "to_float"}
     )
 
     graph.validate()  # Should not raise an exception
 
+
 def test_state_type_enforcement(graph):
     """Test that nodes must return State objects."""
+
     def not_a_state(state: State) -> int:
         return 42
 
     with pytest.raises(ValueError, match="must return a State object"):
         graph.add_node("bad_node", not_a_state)
+
 
 def test_mermaid_diagram_generation():
     """Test Mermaid diagram generation."""
@@ -127,7 +130,7 @@ def test_mermaid_diagram_generation():
 
     def check_even(state: TestState) -> TestState:
         return state.updated(value=state.value)
-    
+
     def is_even(state: TestState) -> bool:
         return state.value % 2 == 0
 
@@ -147,9 +150,7 @@ def test_mermaid_diagram_generation():
     graph.add_edge("add", "check_even")
 
     graph.add_conditional_edges(
-        "check_even",
-        is_even,
-        path_map={True: "handle_even", False: "handle_odd"}
+        "check_even", is_even, path_map={True: "handle_even", False: "handle_odd"}
     )
 
     graph.add_edge("handle_even", END)
@@ -178,13 +179,17 @@ def test_mermaid_diagram_generation():
     assert "check_even -.True.-> handle_even" in mermaid
     assert "check_even -.False.-> handle_odd" in mermaid
 
+
 def test_compile_no_entry_point():
     """Test compiling a graph with no entry point raises ValueError."""
     graph = WorkflowGraph()
     graph.add_node("task1", lambda state: state)
     graph.add_edge("task1", END)
-    with pytest.raises(ValidationError, match="Graph must have at least one entry point"):
+    with pytest.raises(
+        ValidationError, match="Graph must have at least one entry point"
+    ):
         graph.compile()
+
 
 def test_compile_no_finish_point():
     """Test compiling a graph with no finish point raises ValueError."""
@@ -192,8 +197,11 @@ def test_compile_no_finish_point():
     graph.add_node("task1", lambda state: state)
     graph.add_edge(START, "task1")
     # No edge to END
-    with pytest.raises(ValidationError, match="Graph must have at least one exit point"):
+    with pytest.raises(
+        ValidationError, match="Graph must have at least one exit point"
+    ):
         graph.compile()
+
 
 def test_compile_with_conditional_entry():
     """Test compiling a graph with an explicit entry node that branches conditionally."""
@@ -201,20 +209,21 @@ def test_compile_with_conditional_entry():
     graph.add_node("entry", lambda state: state)  # Explicit entry node
     graph.add_node("task_a", lambda state: state)
     graph.add_node("task_b", lambda state: state)
-    
+
     # Connect START to entry node
     graph.add_edge(START, "entry")
-    
+
     # Branch from entry node instead of START
     graph.add_conditional_edges(
         "entry",
         lambda state: "a" if state.value > 5 else "b",
-        {"a": "task_a", "b": "task_b"}
+        {"a": "task_a", "b": "task_b"},
     )
     graph.add_edge("task_a", END)
     graph.add_edge("task_b", END)
     # Should compile without error
     graph.compile()
+
 
 def test_compile_with_conditional_finish():
     """Test compiling a graph with only conditional finish points."""
@@ -224,6 +233,7 @@ def test_compile_with_conditional_finish():
     graph.add_conditional_edges("task1", lambda state: True, {True: END, False: END})
     # Should compile without error
     graph.compile()
+
 
 def test_compile_with_unreachable_node():
     """Test that unreachable nodes are detected and raise an error."""

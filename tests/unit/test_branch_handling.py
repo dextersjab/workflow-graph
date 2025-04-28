@@ -1,26 +1,40 @@
 """Unit tests for branch handling and callback timing in workflow graph."""
-import pytest
+
 import asyncio
-from dataclasses import dataclass, field
-from typing import Any, Optional, List
-from workflow_graph import START, END, State, Edge
-import traceback
+from dataclasses import dataclass
+
+import pytest
+
+from workflow_graph import END, START, State
+
 
 @dataclass
 class BranchState:
+    """State class for testing branch handling in workflow graphs.
+
+    This class represents a simple state that can be used to test branching
+    behavior in workflow graphs. It tracks a numeric value and whether that
+    value is considered high or not.
+    """
+
     value: int
     is_high: bool | None = None
 
+
 TestState = State[BranchState]
+
 
 @pytest.mark.asyncio
 async def test_async_branch_condition(graph):
     """Test async branch condition evaluation."""
+
     async def check_node(state: TestState) -> TestState:
         """Node function that evaluates condition and stores result."""
         await asyncio.sleep(0.1)
         is_high = state.value.value > 5
-        return state.updated(value=BranchState(value=state.value.value, is_high=is_high))
+        return state.updated(
+            value=BranchState(value=state.value.value, is_high=is_high)
+        )
 
     async def branch_condition(state: TestState) -> bool:
         """Branch condition that reads the stored result."""
@@ -28,26 +42,30 @@ async def test_async_branch_condition(graph):
 
     async def high_value_handler(state: TestState) -> TestState:
         await asyncio.sleep(0.1)
-        return state.updated(value=BranchState(value=state.value.value * 2, is_high=state.value.is_high))
+        return state.updated(
+            value=BranchState(value=state.value.value * 2, is_high=state.value.is_high)
+        )
 
     def low_value_handler(state: TestState) -> TestState:
-        return state.updated(value=BranchState(value=state.value.value + 1, is_high=state.value.is_high))
+        return state.updated(
+            value=BranchState(value=state.value.value + 1, is_high=state.value.is_high)
+        )
 
     graph.add_node("check", check_node)
     graph.add_node("high", high_value_handler)
     graph.add_node("low", low_value_handler)
     graph.add_edge(START, "check")
     graph.add_conditional_edges(
-        "check",
-        branch_condition,
-        path_map={True: "high", False: "low"}
+        "check", branch_condition, path_map={True: "high", False: "low"}
     )
     graph.add_edge("high", END)
     graph.add_edge("low", END)
 
     # Test high value path
     initial_state = TestState(value=BranchState(value=10))
-    final_state = await graph.execute_async(initial_state, callback=lambda node, state: print(f"Node '{node}' -> {state}"))
+    final_state = await graph.execute_async(
+        initial_state, callback=lambda node, state: print(f"Node '{node}' -> {state}")
+    )
     assert final_state.value.value == 20  # 10 * 2
     assert final_state.trajectory == ["check", "high"]
     assert final_state.value.is_high is True
@@ -58,6 +76,7 @@ async def test_async_branch_condition(graph):
     assert final_state.value.value == 4  # 3 + 1
     assert final_state.trajectory == ["check", "low"]
     assert final_state.value.is_high is False
+
 
 @pytest.mark.asyncio
 async def test_callback_timing(graph):
@@ -88,11 +107,12 @@ async def test_callback_timing(graph):
 
     # Verify the final state value
     assert result.value.value == 3  # 1 + 1 (async) + 1 (sync) = 3
-    
+
     # Verify callback execution order and timing
     assert len(callback_results) == 2
     assert callback_results[0] == ("async", 2)  # Called after async_node
-    assert callback_results[1] == ("sync", 3)   # Called after sync_node
+    assert callback_results[1] == ("sync", 3)  # Called after sync_node
+
 
 @pytest.mark.asyncio
 async def test_callback_error_handling(graph):
@@ -125,11 +145,15 @@ async def test_callback_error_handling(graph):
     assert len(result.errors) == 1
     assert result.value.value == -1
     assert len(callback_results) == 1
-    assert callback_results[0] == -1  # Callback should receive the error handler's state
+    assert (
+        callback_results[0] == -1
+    )  # Callback should receive the error handler's state
+
 
 @pytest.mark.asyncio
 async def test_nested_branch_handling(graph):
     """Test handling of nested conditional branches with async conditions."""
+
     async def is_positive(state: TestState) -> bool:
         await asyncio.sleep(0.1)
         return state.value.value > 0
@@ -173,20 +197,14 @@ async def test_nested_branch_handling(graph):
     graph.add_conditional_edges(
         source="entry",
         condition=is_positive,
-        path_map={
-            True: "check_even", 
-            False: "absolute"
-        }
+        path_map={True: "check_even", False: "absolute"},
     )
 
     # Add conditional branches for parity check
     graph.add_conditional_edges(
         source="check_even",
         condition=is_even,
-        path_map={
-            True: "double_it",
-            False: "increment"
-        }
+        path_map={True: "double_it", False: "increment"},
     )
 
     # Add edges to END
@@ -213,4 +231,4 @@ async def test_nested_branch_handling(graph):
     assert result.value.value == 5
     assert "absolute" in result.trajectory
     assert "check_even" not in result.trajectory
-    assert "entry" in result.trajectory 
+    assert "entry" in result.trajectory

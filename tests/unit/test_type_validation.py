@@ -1,14 +1,16 @@
 """Unit tests for type validation and graph compilation in workflow graph."""
-import pytest
-import pytest_asyncio
-from typing import Any, TypeVar, List
-from dataclasses import dataclass
-from workflow_graph import State, WorkflowGraph, START, END
-from workflow_graph.exceptions import ValidationError, ExecutionError
 
-T = TypeVar('T')
+from typing import TypeVar
+
+import pytest
+
+from workflow_graph import END, START, State, WorkflowGraph
+from workflow_graph.exceptions import ExecutionError, ValidationError
+
+T = TypeVar("T")
 
 TestState = State[T]
+
 
 @pytest.mark.asyncio
 async def test_type_consistency_validation():
@@ -45,7 +47,8 @@ async def test_type_consistency_validation():
         initial_state = TestState[str](value="1")
         await graph.execute_async(initial_state)
     # Check that the original TypeError message is present
-    assert "can only concatenate str (not \"int\") to str" in str(excinfo.value)
+    assert 'can only concatenate str (not "int") to str' in str(excinfo.value)
+
 
 def test_conditional_type_validation():
     """Test that type validation works with conditional branches."""
@@ -76,7 +79,7 @@ def test_conditional_type_validation():
     graph.add_conditional_edges(
         "check",  # Branch from check node
         condition,
-        {True: "positive", False: "negative"}  # No cycle now
+        {True: "positive", False: "negative"},  # No cycle now
     )
     graph.add_edge("positive", END)
     graph.add_edge("negative", END)
