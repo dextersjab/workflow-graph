@@ -281,7 +281,7 @@ class CompiledGraph:
             return result
             
         except Exception as e:
-            logger.exception(f"Error in node {node_name}: {e}")
+            logger.error(f"Error in node {node_name}: {str(e)}")
             if node.on_error:
                 try:
                     if asyncio.iscoroutinefunction(node.on_error):
@@ -298,7 +298,7 @@ class CompiledGraph:
                     
                     return result
                 except Exception as handler_error:
-                    logger.exception(f"Error handler for node {node_name} failed: {handler_error}")
+                    logger.error(f"Error handler for node {node_name} failed: {str(handler_error)}")
                     raise ExecutionError(f"Error handler failed: {str(handler_error)}")
             raise ExecutionError(f"Node {node_name} failed: {str(e)}")
 
@@ -425,9 +425,6 @@ class CompiledGraph:
     def execute(self, input_data: Any, callback: Callable[[Any], None] | None = None) -> State:
         """Execute the workflow graph synchronously."""
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No running loop, create a new one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
@@ -436,9 +433,12 @@ class CompiledGraph:
             finally:
                 loop.close()
                 asyncio.set_event_loop(None)
-        else:
-            # Running loop exists, use it
-            return loop.run_until_complete(self.execute_async(input_data, callback))
+        except Exception as e:
+            # If it's already an ExecutionError, re-raise it
+            if isinstance(e, ExecutionError):
+                raise
+            # Otherwise, wrap it in an ExecutionError
+            raise ExecutionError(f"Graph execution failed: {str(e)}")
 
     async def _execute_node(self, node_name: str, data: Any) -> Any:
         """Execute a single node in the graph."""
