@@ -13,10 +13,7 @@ from workflow_graph.exceptions import (
 )
 from workflow_graph import Edge, State
 
-@dataclass
-class TestState(State[int]):
-    """Test state class."""
-    pass
+TestState = State[int]
 
 @pytest.fixture
 def graph():
@@ -35,8 +32,8 @@ def test_add_node_validation(graph):
 
 def test_add_edge(graph):
     """Test adding edges between nodes."""
-    graph.add_node("node1", lambda x: x + 1)
-    graph.add_node("node2", lambda x: x * 2)
+    graph.add_node("node1", lambda x: x.updated(value=x.value + 1))
+    graph.add_node("node2", lambda x: x.updated(value=x.value * 2))
 
     # Test adding valid edge
     graph.add_edge("node1", "node2")
@@ -58,9 +55,9 @@ def test_conditional_edges(graph):
     def is_negative(x: int) -> bool:
         return x <= 0
 
-    graph.add_node("node1", lambda x: x + 1)
-    graph.add_node("node2", lambda x: x * 2)
-    graph.add_node("node3", lambda x: x - 1)
+    graph.add_node("node1", lambda x: x.updated(value=x.value + 1))
+    graph.add_node("node2", lambda x: x.updated(value=x.value * 2))
+    graph.add_node("node3", lambda x: x.updated(value=x.value - 1))
 
     # Test adding conditional edges
     graph.add_conditional_edges(
@@ -79,29 +76,20 @@ def test_conditional_edges(graph):
             is_negative,
             {True: "node2", False: "node3"}
         )
-        
-
-
 
 def test_type_validation_with_branches(graph):
     """Test type validation with conditional branches."""
     def add1(state: TestState) -> TestState:
-        return TestState(
-            value=state.value + 1
-        )
+        return state.updated(value=state.value + 1)
 
     def is_even(state: TestState) -> bool:
         return state.value % 2 == 0
 
     def to_str(state: TestState) -> TestState:
-        return TestState(
-            value=str(state.value)
-        )
+        return state.updated(value=str(state.value))
 
     def to_float(state: TestState) -> TestState:
-        return TestState(
-            value=float(state.value)
-        )
+        return state.updated(value=float(state.value))
 
     # Add nodes (only those returning State)
     graph.add_node("add1", add1)
@@ -135,27 +123,19 @@ def test_mermaid_diagram_generation():
     graph = WorkflowGraph()
 
     def add(state: TestState) -> TestState:
-        return TestState(
-            value=state.value + 1,
-        )
+        return state.updated(value=state.value + 1)
 
     def check_even(state: TestState) -> TestState:
-        return TestState(
-            value=state.value,
-        )
+        return state.updated(value=state.value)
     
     def is_even(state: TestState) -> bool:
         return state.value % 2 == 0
 
     def handle_even(state: TestState) -> TestState:
-        return TestState(
-            value=f"Even: {state.value}"
-        )
+        return state.updated(value=f"Even: {state.value}")
 
     def handle_odd(state: TestState) -> TestState:
-        return TestState(
-            value=f"Odd: {state.value}"
-        )
+        return state.updated(value=f"Odd: {state.value}")
 
     # Add nodes
     graph.add_node("add", add)

@@ -5,23 +5,15 @@ from dataclasses import dataclass
 from typing import Optional
 from workflow_graph import State, START, END
 
-@dataclass
-class TestState(State):
-    pass
+TestState = State[int]
 
 def test_simple_workflow_execution(graph):
     """Test execution of a simple linear workflow."""
     def add_one(state: TestState) -> TestState:
-        return TestState(
-            value=state.value + 1,
-            trajectory=state.trajectory.copy()
-        )
+        return state.updated(value=state.value + 1)
 
     def multiply_by_two(state: TestState) -> TestState:
-        return TestState(
-            value=state.value * 2,
-            trajectory=state.trajectory.copy()
-        )
+        return state.updated(value=state.value * 2)
 
     graph.add_node("add", add_one)
     graph.add_node("multiply", multiply_by_two)
@@ -38,9 +30,7 @@ async def test_async_node_execution(graph):
     """Test execution of a workflow with async nodes."""
     async def async_add_one(state: TestState) -> TestState:
         await asyncio.sleep(0.1)
-        return TestState(
-            value=state.value + 1,
-        )
+        return state.updated(value=state.value + 1)
 
     graph.add_node("async_add", async_add_one)
     graph.add_edge(START, "async_add")
@@ -65,25 +55,19 @@ def test_callback_execution(graph):
         result = state.value * 10
         # Store the result for later verification
         process_data.last_result = result
-        return TestState(
-            value=result,
-        )
+        return state.updated(value=result)
     
     def analyze_result(state: TestState) -> TestState:
         result = state.value + 5
         # Store the result for later verification
         analyze_result.last_result = result
-        return TestState(
-            value=result,
-        )
+        return state.updated(value=result)
     
     def format_output(state: TestState) -> TestState:
         result = state.value * 2
         # Store the result for later verification
         format_output.last_result = result
-        return TestState(
-            value=result,
-        )
+        return state.updated(value=result)
     
     # Node-specific callbacks that will stream results to the client
     def process_callback(result: TestState):

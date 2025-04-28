@@ -8,23 +8,21 @@ from workflow_graph.exceptions import ValidationError, ExecutionError
 
 T = TypeVar('T')
 
-@dataclass
-class GenericState(State[T]):
-    pass
+TestState = State[T]
 
 @pytest.mark.asyncio
 async def test_type_consistency_validation():
     """Test that type consistency is maintained throughout the graph."""
     graph = WorkflowGraph()
 
-    def process_a(state: GenericState[int]) -> GenericState[int]:
-        return GenericState(value=state.value + 1)
+    def process_a(state: TestState[int]) -> TestState[int]:
+        return state.updated(value=state.value + 1)
 
-    def process_b(state: GenericState[int]) -> GenericState[int]:
-        return GenericState(value=state.value * 2)
+    def process_b(state: TestState[int]) -> TestState[int]:
+        return state.updated(value=state.value * 2)
 
-    def process_c(state: GenericState[int]) -> GenericState[int]:
-        return GenericState(value=state.value + 3)
+    def process_c(state: TestState[int]) -> TestState[int]:
+        return state.updated(value=state.value + 3)
 
     # Add nodes with consistent types
     graph.add_node("a", process_a)
@@ -38,13 +36,13 @@ async def test_type_consistency_validation():
     graph.add_edge("c", END)
 
     # Test execution with correct type
-    initial_state = GenericState[int](value=1)
+    initial_state = TestState[int](value=1)
     result = await graph.execute_async(initial_state)
     assert result.value == 7  # ((1 + 1) * 2) + 3 = 7
 
     # Test execution with incorrect type
     with pytest.raises(ExecutionError) as excinfo:
-        initial_state = GenericState[str](value="1")
+        initial_state = TestState[str](value="1")
         await graph.execute_async(initial_state)
     # Check that the original TypeError message is present
     assert "can only concatenate str (not \"int\") to str" in str(excinfo.value)
@@ -53,20 +51,20 @@ def test_conditional_type_validation():
     """Test that type validation works with conditional branches."""
     graph = WorkflowGraph()
 
-    def condition(state: GenericState[int]) -> bool:
+    def condition(state: TestState[int]) -> bool:
         return state.value > 0
 
-    def check(state: GenericState[int]) -> GenericState[int]:
-        return GenericState(value=state.value)
+    def check(state: TestState[int]) -> TestState[int]:
+        return TestState(value=state.value)
 
-    def process_positive(state: GenericState[int]) -> GenericState[int]:
-        return GenericState(value=state.value * 2)
+    def process_positive(state: TestState[int]) -> TestState[int]:
+        return TestState(value=state.value * 2)
 
-    def process_negative(state: GenericState[int]) -> GenericState[int]:
-        return GenericState(value=abs(state.value))
+    def process_negative(state: TestState[int]) -> TestState[int]:
+        return TestState(value=abs(state.value))
 
-    def process_string(state: GenericState[str]) -> GenericState[str]:
-        return GenericState(value=state.value + " processed")
+    def process_string(state: TestState[str]) -> TestState[str]:
+        return TestState(value=state.value + " processed")
 
     # Add nodes with consistent types
     graph.add_node("check", check)  # Renamed from "positive"

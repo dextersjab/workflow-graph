@@ -6,29 +6,7 @@ from typing import Any, Optional, List
 from workflow_graph import START, END, State, Edge
 import traceback
 
-@dataclass
-class TestState(State[Any]):
-    """Test state that extends State with additional fields for testing.
-    
-    This state class tracks callback execution history and maintains
-    the standard State functionality for workflow execution.
-    """
-    callback_history: List[str] = field(default_factory=list)
-
-    def copy(self) -> 'TestState':
-        """Create a deep copy of this state."""
-        return TestState(
-            value=self.value,
-            data=self.data.copy(),
-            current_node=self.current_node,
-            trajectory=self.trajectory.copy(),
-            errors=self.errors.copy(),
-            callback_history=self.callback_history.copy()
-        )
-
-    def add_callback_history(self, callback_name: str) -> None:
-        """Add a callback execution to the history."""
-        self.callback_history.append(callback_name)
+TestState = State[int]
 
 @pytest.mark.asyncio
 async def test_async_branch_condition(graph):

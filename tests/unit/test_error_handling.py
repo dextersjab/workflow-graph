@@ -6,9 +6,7 @@ from typing import Optional, List
 from workflow_graph import State, START, END
 from workflow_graph.exceptions import ExecutionError
 
-@dataclass
-class TestState(State):
-    pass
+TestState = State[int]
 
 def test_retry_policy(graph):
     """Test retry policy for a temporarily failing node."""
@@ -19,10 +17,7 @@ def test_retry_policy(graph):
         attempts += 1
         if attempts < 3:  # Fail twice, succeed on third attempt
             raise ValueError("Temporary failure")
-        return TestState(
-            value=state.value + 1,
-            errors=state.errors
-        )
+        return state.updated(value=state.value + 1)
 
     graph.add_node("retry_node", failing_node, retries=3, backoff_factor=0.1)
     graph.add_edge(START, "retry_node")
@@ -40,10 +35,7 @@ def test_error_handling_with_state(graph):
         raise ValueError("Simulated error")
 
     def on_error(error: Exception, state: TestState) -> TestState:
-        return TestState(
-            value=-1,
-            errors=state.errors + [f"Error handled: {str(error)}"]
-        )
+        return state.updated(value=-1).add_error(error, "Error handled")
 
     graph.add_node(
         "failing_node",
@@ -69,10 +61,7 @@ def test_async_error_handling(graph):
 
     async def async_error_handler(error: Exception, state: TestState) -> TestState:
         await asyncio.sleep(0.1)
-        return TestState(
-            value=-1,
-            errors=state.errors + [f"Async error handled: {str(error)}"]
-        )
+        return state.updated(value=-1).add_error(error, "Async error handled")
 
     graph.add_node(
         "failing_async_node",
@@ -98,10 +87,7 @@ def test_error_handler(graph):
     def on_error(error: Exception, state: TestState) -> TestState:
         assert isinstance(error, ValueError)
         assert str(error) == "Permanent failure"
-        return TestState(
-            value=-1,
-            errors=state.errors + [str(error)]
-        )
+        return state.updated(value=-1).add_error(error)
 
     graph.add_node("fail_node", failing_node, on_error=on_error)
     graph.add_edge(START, "fail_node")
@@ -124,10 +110,7 @@ def test_retry_then_error_handler(graph):
     def on_error(error: Exception, state: TestState) -> TestState:
         assert isinstance(error, ValueError)
         assert str(error) == "Failure #3"  # Should be called after all retries
-        return TestState(
-            value=-1,
-            errors=state.errors + [str(error)]
-        )
+        return state.updated(value=-1).add_error(error)
 
     graph.add_node(
         "retry_fail_node",
@@ -155,7 +138,7 @@ async def test_async_retry(graph):
         await asyncio.sleep(0.1)
         if attempts < 3:
             raise ValueError("Temporary async failure")
-        return State(value=state.value + 1, errors=state.errors)
+        return state.updated(value=state.value + 1)
 
     graph.add_node("async_retry_node", async_failing_node, retries=3, backoff_factor=0.1)
     graph.add_edge(START, "async_retry_node")
