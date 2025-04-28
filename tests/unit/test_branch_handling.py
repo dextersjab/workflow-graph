@@ -37,8 +37,7 @@ async def test_async_branch_condition(graph):
         """Node function that evaluates condition and stores result."""
         await asyncio.sleep(0.1)
         is_high = state.value > 5
-        state.set_data("is_high", is_high)
-        return state
+        return state.with_data({"is_high": is_high})
 
     async def branch_condition(state: State[int]) -> bool:
         """Branch condition that reads the stored result."""
@@ -46,24 +45,10 @@ async def test_async_branch_condition(graph):
 
     async def high_value_handler(state: State[int]) -> State[int]:
         await asyncio.sleep(0.1)
-        new_state = State(
-            value=state.value * 2,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy()
-        )
-        return new_state
+        return state.updated(value=state.value * 2)
 
     def low_value_handler(state: State[int]) -> State[int]:
-        new_state = State(
-            value=state.value + 1,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy()
-        )
-        return new_state
+        return state.updated(value=state.value + 1)
 
     graph.add_node("check", check_node)
     graph.add_node("high", high_value_handler)
@@ -98,14 +83,10 @@ async def test_callback_timing(graph):
 
     async def async_node(state: TestState) -> TestState:
         await asyncio.sleep(0.1)
-        new_state = state.copy()
-        new_state.update_value(state.value + 1)
-        return new_state
+        return state.updated(value=state.value + 1)
 
     def sync_node(state: TestState) -> TestState:
-        new_state = state.copy()
-        new_state.update_value(state.value + 1)
-        return new_state
+        return state.updated(value=state.value + 1)
 
     def async_callback(result: TestState):
         callback_results.append(("async", result.value))
@@ -144,10 +125,7 @@ async def test_callback_error_handling(graph):
         nonlocal error_handler_called
         error_handler_called = True
         await asyncio.sleep(0.1)
-        new_state = state.copy()
-        new_state.update_value(-1)
-        new_state.add_error(error)
-        return new_state
+        return state.updated(value=-1).add_error(error)
 
     def node_callback(node_name: str, result: TestState):
         print(f"DEBUG: {node_name} callback -> {result}")
@@ -180,53 +158,23 @@ async def test_nested_branch_handling(graph):
     async def entry_node(state: TestState) -> TestState:
         """Entry node that passes through the state for initial processing."""
         await asyncio.sleep(0.1)
-        return TestState(
-            value=state.value,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy(),
-        )
+        return state
 
     async def check_even(state: TestState) -> TestState:
         """Node that just passes through the state for parity checking."""
         await asyncio.sleep(0.1)
-        return TestState(
-            value=state.value,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy(),
-        )
+        return state
 
     async def double_it(state: TestState) -> TestState:
         await asyncio.sleep(0.1)
-        return TestState(
-            value=state.value * 2,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy(),
-        )
+        return state.updated(value=state.value * 2)
 
     async def increment(state: TestState) -> TestState:
         await asyncio.sleep(0.1)
-        return TestState(
-            value=state.value + 1,
-            data=state.data.copy(),
-            current_node=state.current_node,
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy(),
-        )
+        return state.updated(value=state.value + 1)
 
     def absolute(state: TestState) -> TestState:
-        return TestState(
-            value=abs(state.value),
-            data=state.data.copy(),
-            current_node=state.current_node,
-            trajectory=state.trajectory.copy(),
-            errors=state.errors.copy(),
-        )
+        return state.updated(value=abs(state.value))
 
     # Add nodes for processing
     graph.add_node("entry", entry_node)

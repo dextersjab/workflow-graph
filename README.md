@@ -22,34 +22,66 @@ pip install workflow-graph
 
 ## Usage
 
+For a complete example with visualization and async execution, see [example_usage.py](./example_usage.py).
+
 ### Basic Workflow
 
 ```python
 from workflow_graph import WorkflowGraph, START, END, State
-from dataclasses import dataclass
 
-@dataclass
-class NumberState(State[int]):
-    """State for number processing workflow."""
-    pass
+# Define your state class
+NumberProcessingState = State[int]
 
-def add_one(state: NumberState) -> NumberState:
-    return NumberState(value=state.value + 1)
+# Define basic nodes that work with state
+def add_one(state: NumberProcessingState) -> NumberProcessingState:
+    return NumberProcessingState(value=state.value + 1)
 
-def multiply_by_two(state: NumberState) -> NumberState:
-    return NumberState(value=state.value * 2)
+def check_if_even(state: NumberProcessingState) -> bool:
+    return state.value % 2 == 0
 
-graph = WorkflowGraph()
-graph.add_node("add", add_one)
-graph.add_node("multiply", multiply_by_two)
-graph.add_edge(START, "add")
-graph.add_edge("add", "multiply")
-graph.add_edge("multiply", END)
+def process_even_number(state: NumberProcessingState) -> NumberProcessingState:
+    return NumberProcessingState(value=f"{state.value} ==> Even")
 
-initial_state = NumberState(value=1)
-result = graph.execute(initial_state)
-assert result.value == 4  # (1 + 1) * 2 = 4
+def process_odd_number(state: NumberProcessingState) -> NumberProcessingState:
+    return NumberProcessingState(value=f"{state.value} ==> Odd")
+
+# Create the WorkflowGraph
+workflow = WorkflowGraph()
+
+# Add nodes to the graph
+workflow.add_node("add_one", add_one)
+workflow.add_node("check", lambda state: state)  # Entry node
+workflow.add_node("process_even_number", process_even_number)
+workflow.add_node("process_odd_number", process_odd_number)
+
+# Define edges for the main workflow
+workflow.add_edge(START, "add_one")
+workflow.add_edge("add_one", "check")
+
+# Define conditional edges based on whether the number is even or odd
+workflow.add_conditional_edges(
+    "check", 
+    check_if_even, 
+    path_map={True: "process_even_number", False: "process_odd_number"}
+)
+
+# Set finish points
+workflow.add_edge("process_even_number", END)
+workflow.add_edge("process_odd_number", END)
+
+# Execute the workflow
+initial_state = NumberProcessingState(value=5)
+result = workflow.execute(initial_state)
+print(result.value)  # Output: "6 ==> Odd"
 ```
+
+This example demonstrates a simple workflow that:
+1. Takes a number as input
+2. Adds one to it
+3. Checks if the result is even or odd
+4. Labels the result accordingly
+
+For a more complete example with visualization and async execution, see [example_usage.py](./example_usage.py).
 
 ### Async Workflow
 

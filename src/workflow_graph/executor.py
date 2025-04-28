@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import copy
 from collections import defaultdict
 from typing import Any, Callable, get_args, get_origin
 import inspect
@@ -246,15 +247,18 @@ class CompiledGraph:
             if not isinstance(input_data, State):
                 raise ValueError("Node input must be a State object")
             
+            # Create a defensive copy of the state
+            state_copy = copy.deepcopy(input_data)
+            
             # Execute the node's function with retry logic
             retries = node.retries
             attempt = 0
             while True:
                 try:
                     if asyncio.iscoroutinefunction(node.func):
-                        result = await node.func(input_data)
+                        result = await node.func(state_copy)
                     else:
-                        result = node.func(input_data)
+                        result = node.func(state_copy)
                     break
                 except Exception as e:
                     attempt += 1
@@ -264,34 +268,27 @@ class CompiledGraph:
                         continue
                     raise
             
-            # Validate that result is a State object
+            # If the function didn't return a new state, use the copied state
             if not isinstance(result, State):
-                raise ValueError(f"Node {node_name} must return a State object, got {type(result)}")
+                result = state_copy
             
             # Call callbacks with the result
             await self._invoke_callbacks(node, node_name, result, callback)
             
-            # Return the new state
-            return type(input_data)(
-                value=result.value,
-                current_node=node_name,
-                trajectory=input_data.trajectory.copy(),
-                errors=input_data.errors.copy(),
-                data=result.data.copy()  # Use the new state's data
-            )
+            return result
             
         except Exception as e:
             logger.exception(f"Error in node {node_name}: {e}")
             if node.on_error:
                 try:
                     if asyncio.iscoroutinefunction(node.on_error):
-                        result = await node.on_error(e, input_data)
+                        result = await node.on_error(e, state_copy)
                     else:
-                        result = node.on_error(e, input_data)
+                        result = node.on_error(e, state_copy)
                     
-                    # Validate that error handler returns a State object
+                    # If error handler didn't return a state, use the copied state
                     if not isinstance(result, State):
-                        raise ValueError(f"Error handler for node {node_name} must return a State object, got {type(result)}")
+                        result = state_copy
                     
                     # Call callbacks with the error handler result
                     await self._invoke_callbacks(node, node_name, result, callback)
@@ -344,7 +341,7 @@ class CompiledGraph:
             if current_node == END:
                 break
 
-            # Special handling for START node - DO NOT REMOVE UNLESS EXPLICITLY ASKED TO!
+            # Special handling for START node
             if current_node == START:
                 # Add all direct edge destinations from START
                 for next_node in self.edges[START]:
@@ -362,22 +359,21 @@ class CompiledGraph:
 
             try:
                 result = await self.execute_node(current_node, state, callback)
-                if not isinstance(result, State):
-                    state.update_value(result)
-                else:
-                    state = result
-
+                state = result
                 state.trajectory.append(current_node)
                 
                 # Handle branches first
                 branch_taken = False
                 if current_node in self.branches:
                     for branch_name, branch in self.branches[current_node].items():
+                        # Create a defensive copy for the condition
+                        condition_state = copy.deepcopy(state)
+                        
                         # Evaluate condition
                         if asyncio.iscoroutinefunction(branch.condition):
-                            condition_result = await branch.condition(state)
+                            condition_result = await branch.condition(condition_state)
                         else:
-                            condition_result = branch.condition(state)
+                            condition_result = branch.condition(condition_state)
                         
                         # Validate condition result
                         self._validate_condition_result(condition_result, branch_name)
