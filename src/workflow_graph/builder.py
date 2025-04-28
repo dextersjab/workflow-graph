@@ -72,7 +72,7 @@ class WorkflowGraph(Generic[T]):
         metadata: dict[str, Any] | None = None,
         input_type: type | None = None,
         output_type: type | None = None,
-    ) -> "WorkflowGraph":
+    ) -> None:
         """Add a node to the workflow graph.
 
         Args:

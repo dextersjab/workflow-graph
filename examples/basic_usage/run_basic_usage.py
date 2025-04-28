@@ -1,4 +1,5 @@
-"""Example demonstrating basic usage of the workflow-graph package.
+"""
+Basic workflow-graph example.
 
 This example shows how to create a simple workflow that:
 1. Adds one to a number
@@ -103,7 +104,13 @@ async def run_workflow(input_value: int, delay: float = 0.0):
     print("---\n")
 
 
-# run the workflow with different inputs
-# simulate real workflows by faking delays
-asyncio.run(run_workflow(5, delay=1.0))
-asyncio.run(run_workflow(6, delay=2.0))
+async def main():
+    """Run the workflow with different inputs."""
+    # run the workflow with different inputs
+    # simulate real workflows by faking delays
+    await run_workflow(5, delay=1.0)
+    await run_workflow(6, delay=2.0)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
