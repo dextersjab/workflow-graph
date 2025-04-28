@@ -55,6 +55,9 @@ class CompiledGraph:
         for node_name in self.nodes:
             mermaid_code.append(f"    {node_name}[\"{node_name}\"]")
         
+        if len(self.nodes) > 0:
+            mermaid_code.append(f"")
+
         # Add direct edges
         for start, ends in self.edges.items():
             for end in ends:
