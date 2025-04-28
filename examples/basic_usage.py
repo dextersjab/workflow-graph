@@ -2,10 +2,10 @@ import asyncio
 from workflow_graph import WorkflowGraph, START, END, State
 import sys
 
-# Define your state class
+# define your state class
 NumberProcessingState = State[int]
 
-# Define basic nodes that work with state
+# define basic nodes which each return the updated state
 def add_one(state: NumberProcessingState) -> NumberProcessingState:
     return state.updated(value=state.value + 1)
 
@@ -15,20 +15,20 @@ def process_even_number(state: NumberProcessingState) -> NumberProcessingState:
 def process_odd_number(state: NumberProcessingState) -> NumberProcessingState:
     return state.updated(value=f"{state.value}, odd")
 
-# Create the workflow graph
+# create the workflow graph
 add_one_and_classify_workflow = WorkflowGraph()
 
-# Add nodes to the graph
+# add nodes to the graph
 add_one_and_classify_workflow.add_node("add_one", add_one)
 add_one_and_classify_workflow.add_node("check_if_even", lambda state: state)  # Entry node
 add_one_and_classify_workflow.add_node("process_even_number", process_even_number)
 add_one_and_classify_workflow.add_node("process_odd_number", process_odd_number)
 
-# Add fixed edges between nodes
+# add fixed edges between nodes
 add_one_and_classify_workflow.add_edge(START, "add_one")
 add_one_and_classify_workflow.add_edge("add_one", "check_if_even")
 
-# Add conditional edge between nodes
+# add conditional edge between nodes
 # i.e. choose the target node based on whether the number is even or odd
 add_one_and_classify_workflow.add_conditional_edges(
     "check_if_even",
@@ -36,19 +36,19 @@ add_one_and_classify_workflow.add_conditional_edges(
     path_map={True: "process_even_number", False: "process_odd_number"}
 )
 
-# Set fixed finish points
+# set fixed finish points
 add_one_and_classify_workflow.add_edge("process_even_number", END)
 add_one_and_classify_workflow.add_edge("process_odd_number", END)
 
-# Compile and validate the graph
+# compile and validate the graph
 compiled_add_one_and_classify = add_one_and_classify_workflow.compile()
 
-# Generate and print Mermaid diagram
+# print mermaid diagram
 print("\nMermaid diagram representation:\n")
 print(add_one_and_classify_workflow.to_mermaid())
 print("\n")
 
-# Run the workflow
+# run the workflow
 async def run_workflow(input_value: int, delay: float = 0.0):
     print(f"---")
     print(f"Input value: {input_value}")
@@ -76,6 +76,7 @@ async def run_workflow(input_value: int, delay: float = 0.0):
     sys.stdout.flush()
     print(f"---\n")
 
-# Run the workflow with different inputs
-# Fake delays added to simulate a workflow that taks a while
-asyncio.run(run_workflow(5, delay=2.0))  # 2-sec delay
+# run the workflow with different inputs
+# simulate real workflows by faking delays
+asyncio.run(run_workflow(5, delay=1.0))
+asyncio.run(run_workflow(6, delay=2.0))
