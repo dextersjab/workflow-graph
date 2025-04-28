@@ -15,6 +15,60 @@ A Python library for building and executing directed graphs of operations, with 
 - **Generic Types**: Support for generic types in workflow state
 - **Cycle Support**: By default, cycles are allowed. Use `enforce_acyclic=True` to enforce a DAG structure.
 
+## Development Tools
+
+This project uses several development tools to maintain code quality and consistency:
+
+- **Black**: Code formatter that enforces consistent Python code style
+- **isort**: Sorts and organizes imports alphabetically and by sections
+- **Flake8**: Linter that checks for style guide enforcement and logical errors
+- **mypy**: Static type checker for Python
+
+### Installation
+
+To install all development dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+### Usage
+
+Format code with Black and isort:
+
+```bash
+black .
+isort .
+```
+
+Run Flake8 linting:
+
+```bash
+flake8
+```
+
+Run mypy type checking:
+
+```bash
+mypy .
+```
+
+### Pre-commit Hooks
+
+To set up pre-commit hooks that automatically run these tools before each commit:
+
+1. Install pre-commit:
+```bash
+pip install pre-commit
+```
+
+2. Install the hooks:
+```bash
+pre-commit install
+```
+
+The hooks will automatically run Black, isort, Flake8, and mypy before each commit.
+
 ## Installation
 
 ```bash
