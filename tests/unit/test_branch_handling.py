@@ -35,7 +35,7 @@ async def test_async_branch_condition(graph):
     graph.add_conditional_edges(
         "check",
         branch_condition,
-        path_map={"True": "high", "False": "low"}
+        path_map={True: "high", False: "low"}
     )
     graph.add_edge("high", END)
     graph.add_edge("low", END)

@@ -12,6 +12,8 @@ from typing import (
 )
 from collections import deque
 import inspect
+from enum import Enum
+from typing import Literal
 
 from .constants import START, END
 from .models import Branch, Node, State, Edge
@@ -177,13 +179,15 @@ class WorkflowGraph(Generic[T]):
         
         Args:
             source: Source node name
-            condition: Function that determines the branch path
+            condition: Function that determines the branch path. Must return bool, Enum, or Literal.
             path_map: Mapping of condition values to destination node names
             callback: Optional callback function that receives (source, target, state)
             
         Raises:
             ValueError: If a branch with the same name already exists
             InvalidEdgeError: If trying to add conditional edges from START
+            TypeError: If condition return type is not bool, Enum, or Literal
+            ValidationError: If path_map does not cover all possible condition values
         """
         if self.compiled:
             logger.warning(
@@ -212,16 +216,66 @@ class WorkflowGraph(Generic[T]):
                 f"Branch with name `{name}` already exists for node `{source}`"
             )
         
-        # Validate condition function returns a hashable value
+        # Get return type annotation
         return_annotation = inspect.signature(condition).return_annotation
-        if return_annotation != inspect.Signature.empty:
-            try:
-                hash(return_annotation())
-            except (TypeError, ValueError):
-                raise ValueError(
-                    f"Branch condition function '{name}' must return a hashable value "
-                    f"(bool, str, int, float, tuple, or frozenset), got {return_annotation}"
-                )
+        
+        # If no annotation, infer type from path_map keys
+        if return_annotation == inspect.Signature.empty and path_map is not None:
+            # Check if all keys are bool
+            if all(isinstance(k, bool) for k in path_map.keys()):
+                return_annotation = bool
+            # Check if all keys are from the same Enum
+            elif all(isinstance(k, Enum) for k in path_map.keys()):
+                enum_types = {type(k) for k in path_map.keys()}
+                if len(enum_types) == 1:
+                    return_annotation = next(iter(enum_types))
+            # Check if all keys are strings (could be Literal)
+            elif all(isinstance(k, str) for k in path_map.keys()):
+                # Create a Literal type from the string values
+                return_annotation = Literal[tuple(path_map.keys())]  # type: ignore
+        
+        # Restrict to bool, Enum, or Literal only
+        is_enum = (
+            isinstance(return_annotation, type)
+            and issubclass(return_annotation, Enum)
+        )
+        is_literal = get_origin(return_annotation) is Literal
+
+        if not (return_annotation is bool or is_enum or is_literal):
+            raise TypeError(
+                f"Branch condition function '{name}' must return bool, Enum, or Literal, "
+                f"but got {return_annotation!r}. Either add a return type annotation or "
+                f"use bool, Enum, or string values in path_map."
+            )
+        
+        # Validate path_map coverage based on return type
+        if path_map is not None:
+            # Handle bool return type
+            if return_annotation is bool:
+                for val in (True, False):
+                    if val not in path_map:
+                        raise ValidationError(
+                            f"Conditional edge from '{source}' does not handle {val} branch. "
+                            f"Add a path for {val} in path_map."
+                        )
+            
+            # Handle Enum return type
+            elif is_enum:
+                for val in return_annotation:
+                    if val not in path_map:
+                        raise ValidationError(
+                            f"Conditional edge from '{source}' does not handle {val} branch. "
+                            f"Add a path for {val} in path_map."
+                        )
+            
+            # Handle Literal return type
+            elif is_literal:
+                for val in get_args(return_annotation):
+                    if val not in path_map:
+                        raise ValidationError(
+                            f"Conditional edge from '{source}' does not handle {val} branch. "
+                            f"Add a path for {val} in path_map."
+                        )
         
         # Create branch with condition
         branch = Branch(
