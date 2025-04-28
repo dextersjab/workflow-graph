@@ -14,13 +14,11 @@ class State(Generic[T]):
     
     Attributes:
         value: The current value being processed through the workflow
-        data: Dictionary of node-specific data that can be read/written by nodes
         current_node: Name of the current node being executed
         trajectory: List of nodes traversed during execution
         errors: List of error messages encountered during execution
     """
     value: T | None
-    data: dict[str, Any] = field(default_factory=dict)
     current_node: str | None = None
     trajectory: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -44,7 +42,7 @@ class State(Generic[T]):
     def updated(self, **kwargs) -> "State[T]":
         """Return a new State with updated fields (immutable pattern).
         
-        This method automatically handles copying of mutable fields (data, trajectory, errors)
+        This method automatically handles copying of mutable fields (trajectory, errors)
         to ensure immutability.
         
         Args:
@@ -54,8 +52,6 @@ class State(Generic[T]):
             A new State instance with the specified fields updated
         """
         # Handle mutable fields
-        if "data" in kwargs and isinstance(kwargs["data"], dict):
-            kwargs["data"] = kwargs["data"].copy()
         if "trajectory" in kwargs and isinstance(kwargs["trajectory"], list):
             kwargs["trajectory"] = kwargs["trajectory"].copy()
         if "errors" in kwargs and isinstance(kwargs["errors"], list):
@@ -63,34 +59,9 @@ class State(Generic[T]):
             
         return replace(self, **kwargs)
 
-    def with_data(self, updates: dict[str, Any]) -> "State[T]":
-        """Return a new State with an updated data dictionary.
-        
-        Args:
-            updates: Dictionary of key-value pairs to update in the data dictionary
-            
-        Returns:
-            A new State instance with the updated data dictionary
-        """
-        new_data = self.data.copy()
-        new_data.update(updates)
-        return self.updated(data=new_data)
-
-    def get_data(self, key: str, default: Any = None) -> Any:
-        """Get a value from the data dictionary.
-        
-        Args:
-            key: The key to look up
-            default: Value to return if key is not found
-            
-        Returns:
-            The value associated with the key, or default if not found
-        """
-        return self.data.get(key, default)
-
     def __str__(self) -> str:
         """String representation of the state."""
-        return f"State(value={self.value}, data={self.data}, current_node={self.current_node}, trajectory={self.trajectory}, errors={self.errors})"
+        return f"State(value={self.value}, current_node={self.current_node}, trajectory={self.trajectory}, errors={self.errors})"
 
 @dataclass
 class Branch[T]:
