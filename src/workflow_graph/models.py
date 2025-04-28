@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Generic, Optional, TypeVar
+import typing
+import inspect
+from typing import get_origin
 
 T = TypeVar("T")
 
@@ -147,4 +150,23 @@ class Node(Generic[T]):
     backoff_factor: Optional[float] = None
     metadata: Optional[dict[str, Any]] = None
     input_type: Optional[type[T]] = None
-    output_type: Optional[type[T]] = None 
+    output_type: Optional[type[T]] = None
+
+    def add_node(self):
+        try:
+            hints = typing.get_type_hints(self.func)
+            return_annotation = hints.get('return', inspect.Signature.empty)
+        except Exception:
+            # fallback if get_type_hints fails
+            return_annotation = inspect.signature(self.func).return_annotation
+
+        if return_annotation != inspect.Signature.empty:
+            base_type = get_origin(return_annotation) or return_annotation
+            if not isinstance(base_type, type):
+                raise TypeError(
+                    f"Node function '{self.name}' must return a State subclass, but got: {base_type!r}."
+                )
+            if not issubclass(base_type, State):
+                raise ValueError(
+                    f"Node function '{self.name}' must return a State object or subclass, got {return_annotation}"
+                ) 

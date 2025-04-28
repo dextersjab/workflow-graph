@@ -96,9 +96,17 @@ class WorkflowGraph(Generic[T]):
             base_type = get_origin(return_annotation)
             if base_type is None:
                 base_type = return_annotation
-            
+
+            if not isinstance(base_type, type):
+                raise TypeError(
+                    f"Node function '{name}' must return a State subclass, but got a string annotation: {base_type!r}. "
+                    "If using forward references, add 'from __future__ import annotations'."
+                )
+
             if not issubclass(base_type, State):
-                raise ValueError(f"Node function '{name}' must return a State object or subclass, got {return_annotation}")
+                raise ValueError(
+                    f"Node function '{name}' must return a State object or subclass, got {return_annotation}"
+                )
         
         # Validate error handler return type if provided
         if on_error is not None:
