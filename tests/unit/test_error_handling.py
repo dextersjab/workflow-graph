@@ -59,7 +59,7 @@ def test_async_error_handling(graph):
         await asyncio.sleep(0.1)
         raise ValueError("Async error")
 
-    async def async_error_handler(error: Exception, state: TestState) -> TestState:
+    async def async_on_error(error: Exception, state: TestState) -> TestState:
         await asyncio.sleep(0.1)
         return state.updated(value=-1).add_error(error, "Async error handled")
 
@@ -67,7 +67,7 @@ def test_async_error_handling(graph):
         "failing_async_node",
         failing_async_node,
         retries=0,
-        on_error=async_error_handler
+        on_error=async_on_error
     )
     graph.add_edge(START, "failing_async_node")
     graph.add_edge("failing_async_node", END)
@@ -79,7 +79,7 @@ def test_async_error_handling(graph):
     assert len(result.errors) == 1
     assert "Async error handled: Async error" in result.errors[0]
 
-def test_error_handler(graph):
+def test_on_error(graph):
     """Test error handler execution on node failure."""
     def failing_node(state: TestState) -> TestState:
         raise ValueError("Permanent failure")
@@ -98,7 +98,7 @@ def test_error_handler(graph):
     assert len(result.errors) == 1
     assert "Permanent failure" in result.errors[0]
 
-def test_retry_then_error_handler(graph):
+def test_retry_then_on_error(graph):
     """Test retry policy followed by error handler."""
     attempts = 0
 

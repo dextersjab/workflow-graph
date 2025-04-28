@@ -24,7 +24,7 @@ def output_node(state: TestState) -> TestState:
     )
 
 # Define an async error handler that returns None (for a different test)
-async def async_error_handler_returns_none(error: Exception, state: TestState) -> TestState:
+async def async_on_error_returns_none(error: Exception, state: TestState) -> TestState:
     """Async error handler that returns a State with None value."""
     assert isinstance(error, ValueError)
     assert str(error) == "This node is designed to fail."
@@ -68,7 +68,7 @@ def test_sync_execute_with_failing_async_node_and_async_none_handler():
     graph.add_node(
         "failing_node",
         async_node_raises_error,
-        on_error=async_error_handler_returns_none,
+        on_error=async_on_error_returns_none,
         retries=0 # No retries
     )
     graph.add_node("next_node", output_node) # This node will process the None value

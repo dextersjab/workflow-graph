@@ -34,16 +34,16 @@ NumberProcessingState = State[int]
 
 # Define basic nodes that work with state
 def add_one(state: NumberProcessingState) -> NumberProcessingState:
-    return NumberProcessingState(value=state.value + 1)
+    return state.updated(value=state.value + 1)
 
 def check_if_even(state: NumberProcessingState) -> bool:
     return state.value % 2 == 0
 
 def process_even_number(state: NumberProcessingState) -> NumberProcessingState:
-    return NumberProcessingState(value=f"{state.value} ==> Even")
+    return state.updated(value=f"{state.value} ==> Even")
 
 def process_odd_number(state: NumberProcessingState) -> NumberProcessingState:
-    return NumberProcessingState(value=f"{state.value} ==> Odd")
+    return state.updated(value=f"{state.value} ==> Odd")
 
 # Create the WorkflowGraph
 workflow = WorkflowGraph()
@@ -150,7 +150,7 @@ def failing_operation(state: NumberState) -> NumberState:
     raise ValueError("Operation failed")
 
 def on_error(error: Exception, state: NumberState) -> NumberState:
-    return NumberState(value=-1, errors=state.errors + [str(error)])
+    return state.updated(value=-1).add_error(error, "failing_op")
 
 graph = WorkflowGraph()
 graph.add_node(
@@ -172,7 +172,7 @@ assert len(result.errors) > 0
 
 ```python
 def process_data(state: NumberState) -> NumberState:
-    return NumberState(value=state.value * 10)
+    return state.updated(value=state.value * 10)
 
 def callback(result: NumberState):
     print(f"Processed result: {result.value}")
@@ -192,16 +192,11 @@ from typing import Generic, TypeVar
 
 T = TypeVar('T')
 
-@dataclass
-class GenericState(State[T]):
-    """Generic state class for type-safe workflows."""
-    pass
+def process_int(state: State[int]) -> State[int]:
+    return state.updated(value=state.value + 1)
 
-def process_int(state: GenericState[int]) -> GenericState[int]:
-    return GenericState(value=state.value + 1)
-
-def process_str(state: GenericState[str]) -> GenericState[str]:
-    return GenericState(value=state.value + " processed")
+def process_str(state: State[str]) -> State[str]:
+    return state.updated(value=state.value + " processed")
 
 # Create separate graphs for different types
 int_graph = WorkflowGraph()
@@ -215,10 +210,10 @@ str_graph.add_edge(START, "process")
 str_graph.add_edge("process", END)
 
 # Execute with correct types
-int_result = int_graph.execute(GenericState[int](value=1))
+int_result = int_graph.execute(State[int](value=1))
 assert int_result.value == 2
 
-str_result = str_graph.execute(GenericState[str](value="test"))
+str_result = str_graph.execute(State[str](value="test"))
 assert str_result.value == "test processed"
 ```
 

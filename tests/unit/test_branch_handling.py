@@ -93,15 +93,15 @@ async def test_callback_timing(graph):
 async def test_callback_error_handling(graph):
     """Test callback behavior when errors occur."""
     callback_results = []
-    error_handler_called = False
+    on_error_called = False
 
     async def failing_node(state: TestState) -> TestState:
         await asyncio.sleep(0.1)
         raise ValueError("Node failed")
 
     async def on_error(error: Exception, state: TestState) -> TestState:
-        nonlocal error_handler_called
-        error_handler_called = True
+        nonlocal on_error_called
+        on_error_called = True
         await asyncio.sleep(0.1)
         return state.updated(value=-1).add_error(error)
 
@@ -116,7 +116,7 @@ async def test_callback_error_handling(graph):
     initial_state = TestState(value=1)
     result = await graph.execute_async(initial_state, callback=node_callback)
 
-    assert error_handler_called
+    assert on_error_called
     assert len(result.errors) == 1
     assert result.value == -1
     assert len(callback_results) == 1

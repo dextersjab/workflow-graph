@@ -7,19 +7,13 @@ NumberProcessingState = State[int]
 
 # Define basic nodes that work with state
 def add_one(state: NumberProcessingState) -> NumberProcessingState:
-    return state.updated(
-        value=state.value + 1
-    )
+    return state.updated(value=state.value + 1)
 
 def process_even_number(state: NumberProcessingState) -> NumberProcessingState:
-    return state.updated(
-        value=f"{state.value}, Even"
-    )
+    return state.updated(value=f"{state.value}, even")
 
 def process_odd_number(state: NumberProcessingState) -> NumberProcessingState:
-    return state.updated(
-        value=f"{state.value}, Odd"
-    )
+    return state.updated(value=f"{state.value}, odd")
 
 # Create the workflow graph
 add_one_and_classify_workflow = WorkflowGraph()
@@ -85,4 +79,3 @@ async def run_workflow(input_value: int, delay: float = 0.0):
 # Run the workflow with different inputs
 # Fake delays added to simulate a workflow that taks a while
 asyncio.run(run_workflow(5, delay=2.0))  # 2-sec delay
-asyncio.run(run_workflow(6, delay=1.0))  # 1-sec delay
