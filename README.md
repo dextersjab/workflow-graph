@@ -23,7 +23,7 @@ pip install workflow-graph
 
 ## Usage
 
-For a complete example with visualization and async execution, see [example_usage.py](./example_usage.py).
+For a complete example with visualization and async execution, see [examples/basic_usage.py](./examples/basic_usage.py).
 
 ### Basic Workflow
 
