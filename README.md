@@ -1,6 +1,6 @@
 # Workflow Graph
 
-A Python library for building and executing directed acyclic graphs (DAGs) of operations, with support for both synchronous and asynchronous execution.
+A Python library for building and executing directed graphs of operations, with support for both synchronous and asynchronous execution.
 
 > **BREAKING CHANGES WARNING**: Version 0.3.0 introduced significant API changes. Please review the documentation carefully when upgrading from earlier versions.
 
@@ -13,6 +13,7 @@ A Python library for building and executing directed acyclic graphs (DAGs) of op
 - **State Management**: Proper state persistence between nodes
 - **Callback Support**: Configurable callbacks for monitoring execution progress
 - **Generic Types**: Support for generic types in workflow state
+- **Cycle Support**: By default, cycles are allowed. Use `enforce_acyclic=True` to enforce a DAG structure.
 
 ## Installation
 
@@ -96,7 +97,7 @@ class NumberState(State[int]):
 
 async def async_operation(state: NumberState) -> NumberState:
     await asyncio.sleep(0.1)
-    return NumberState(value=state.value + 1)
+    return state.updated(value=state.value + 1)
 
 graph = WorkflowGraph()
 graph.add_node("async_op", async_operation)
@@ -115,10 +116,10 @@ def is_even(state: NumberState) -> bool:
     return state.value % 2 == 0
 
 def process_even(state: NumberState) -> NumberState:
-    return NumberState(value=state.value * 2)
+    return state.updated(value=state.value * 2)
 
 def process_odd(state: NumberState) -> NumberState:
-    return NumberState(value=state.value + 1)
+    return state.updated(value=state.value + 1)
 
 graph = WorkflowGraph()
 graph.add_node("check", lambda state: state)  # Entry node
@@ -149,7 +150,7 @@ assert result.value == 4  # 3 + 1 = 4
 def failing_operation(state: NumberState) -> NumberState:
     raise ValueError("Operation failed")
 
-def on_error(error: Exception, state: NumberState) -> NumberState:
+def error_handler(error: Exception, state: NumberState) -> NumberState:
     return state.updated(value=-1).add_error(error, "failing_op")
 
 graph = WorkflowGraph()
@@ -158,7 +159,7 @@ graph.add_node(
     failing_operation,
     retries=2,
     backoff_factor=0.1,
-    on_error=on_error
+    error_handler=error_handler
 )
 graph.add_edge(START, "failing_op")
 graph.add_edge("failing_op", END)
@@ -192,6 +193,7 @@ from typing import Generic, TypeVar
 
 T = TypeVar('T')
 
+# No need for custom GenericState class - use State[T] directly
 def process_int(state: State[int]) -> State[int]:
     return state.updated(value=state.value + 1)
 
@@ -228,6 +230,7 @@ The latest version includes several important improvements:
 5. **Branch Handling**: Explicit entry nodes for conditional branches
 6. **Callback Timing**: Improved callback execution timing
 7. **Documentation**: Updated examples to match actual implementation
+8. **Cycle Support**: By default, cycles are allowed. Use `enforce_acyclic=True` to enforce a DAG structure.
 
 ## Contributing
 

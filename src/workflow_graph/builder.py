@@ -35,12 +35,18 @@ class WorkflowGraph(Generic[T]):
     into an executable form.
     """
     
-    def __init__(self) -> None:
-        """Initialize a new workflow graph builder."""
+    def __init__(self, enforce_acyclic: bool = False) -> None:
+        """Initialize a new workflow graph builder.
+        
+        Args:
+            enforce_acyclic: If True, the graph must be a DAG (no cycles allowed).
+                            If False, cycles are allowed (default).
+        """
         self.nodes: dict[str, Node] = {}
         self.edges: dict[str, set[Edge]] = defaultdict(set)
         self.branches: defaultdict[str, dict[str, Branch]] = defaultdict(dict)
         self.compiled = False
+        self.enforce_acyclic = enforce_acyclic
 
     @property
     def _all_edges(self) -> set[tuple[str, str, Callable[[str, str, Any], None] | None]]:
@@ -234,7 +240,7 @@ class WorkflowGraph(Generic[T]):
         has_conditional_entry = START in self.branches
         if not has_entry_edge and not has_conditional_entry:
             raise ValidationError(
-                f"Graph must have at least one entry point defined by adding an edge from '{START}' or a conditional edge from '{START}'"
+                f"Graph must have at least one entry point defined by adding an edge from 'START' or a conditional edge from 'START'"
             )
 
         # Check for at least one finish point
@@ -246,7 +252,7 @@ class WorkflowGraph(Generic[T]):
         )
         if not has_finish_edge and not has_conditional_finish:
             raise ValidationError(
-                f"Graph must have at least one exit point defined by adding an edge to '{END}' or a conditional edge to '{END}'"
+                f"Graph must have at least one exit point defined by adding an edge to 'END' or a conditional edge to 'END'"
             )
 
         # Check for unreachable nodes
@@ -281,8 +287,8 @@ class WorkflowGraph(Generic[T]):
             if unreachable:
                 raise ValueError(f"Unreachable nodes detected: {', '.join(unreachable)}")
 
-        # Check for cycles
-        if self._has_cycles():
+        # Check for cycles if enforce_acyclic is True
+        if self.enforce_acyclic and self._has_cycles():
             raise ValueError("Graph contains cycles")
 
     def _has_cycles(self) -> bool:
@@ -335,7 +341,7 @@ class WorkflowGraph(Generic[T]):
         has_conditional_entry = START in self.branches
         if not has_entry_edge and not has_conditional_entry:
             raise ValueError(
-                f"Graph must have at least one entry point defined by adding an edge from '{START}' or a conditional edge from '{START}'"
+                f"Graph must have at least one entry point defined by adding an edge from 'START' or a conditional edge from 'START'"
             )
             
         # Check for at least one finish point (edge to END)
@@ -347,7 +353,7 @@ class WorkflowGraph(Generic[T]):
         )
         if not has_finish_edge and not has_conditional_finish:
              raise ValueError(
-                f"Graph must have at least one finish point defined by adding an edge to '{END}' or a conditional edge to '{END}'"
+                f"Graph must have at least one finish point defined by adding an edge to 'END' or a conditional edge to 'END'"
             )
 
         # Create compiled graph and validate it
