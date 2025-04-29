@@ -65,6 +65,7 @@ class WorkflowGraph(Generic[T]):
         name: str,
         func: Callable[[Any], Any],
         callback: Callable[[Any], None] | None = None,
+        stream_callback: Callable[[str], None] | None = None,
         on_error: Callable[[Exception, Any], Any] | None = None,
         retries: int = 0,
         retry_delay: float = 0,
@@ -79,6 +80,7 @@ class WorkflowGraph(Generic[T]):
             name: Name of the node
             func: Function to execute for this node
             callback: Optional callback function
+            stream_callback: Optional callback function for streaming tokens
             on_error: Optional error handler
             retries: Number of retries on failure
             retry_delay: Delay between retries
@@ -128,6 +130,7 @@ class WorkflowGraph(Generic[T]):
             name=name,
             func=func,
             callback=callback,
+            stream_callback=stream_callback,
             on_error=on_error,
             retries=retries,
             retry_delay=retry_delay,

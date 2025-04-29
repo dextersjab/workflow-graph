@@ -276,10 +276,14 @@ class CompiledGraph:
             attempt = 0
             while True:
                 try:
+                    func_kwargs = {}
+                    if node.stream_callback is not None:
+                        func_kwargs["stream_callback"] = node.stream_callback
+
                     if asyncio.iscoroutinefunction(node.func):
-                        result = await node.func(state_copy)
+                        result = await node.func(state_copy, **func_kwargs)
                     else:
-                        result = node.func(state_copy)
+                        result = node.func(state_copy, **func_kwargs)
                     break
                 except Exception:
                     attempt += 1

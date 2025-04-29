@@ -1,6 +1,7 @@
 """Research agent implementation using workflow-graph."""
 
 import json
+from typing import Callable, Optional
 
 from workflow_graph import END, START, WorkflowGraph
 
@@ -9,7 +10,9 @@ from .models import Action, ResearchState
 from .tools import tools
 
 
-async def llm_decide(state: ResearchState) -> ResearchState:
+async def llm_decide(
+    state: ResearchState, stream_callback: Optional[Callable[[str], None]] = None
+) -> ResearchState:
     """Produce the next action from the LLM."""
     system = """You are a research agent. You have access to the following tools:
 
@@ -30,12 +33,13 @@ Current transcript:
 
 What is your next action?"""
 
-    # Call LLM with tool schemas
+    # Call LLM with tool schemas and streaming
     response = await call_llm(
         system=system.format(
             tools="\n".join(f"- {name}: {func.__doc__}" for name, func in tools.items())
         ),
         user=user_input,
+        stream_callback=stream_callback,
     )
 
     # Parse string response into dict
@@ -102,7 +106,9 @@ async def integrate_observation(state: ResearchState) -> ResearchState:
     return state.updated(step_count=state.step_count + 1, transcript=transcript)
 
 
-async def synthesise_final_answer(state: ResearchState) -> ResearchState:
+async def synthesise_final_answer(
+    state: ResearchState, stream_callback: Optional[Callable[[str], None]] = None
+) -> ResearchState:
     """Synthesize a final answer when step limit reached."""
     system = """You are a research agent. Based on the following transcript, provide a final answer to the user's question.
 Respond with a JSON object in this format:
@@ -117,7 +123,9 @@ Transcript:
 
 Provide a final answer:"""
 
-    response = await call_llm(system=system, user=user_input)
+    response = await call_llm(
+        system=system, user=user_input, stream_callback=stream_callback
+    )
 
     # Parse response
     try:
@@ -154,13 +162,20 @@ def build_graph() -> WorkflowGraph:
         if "observation" in state.value:
             print(f"\nObservation: {state.value['observation']}")
 
+    def stream_token(token: str) -> None:
+        print(token, end="", flush=True)
+
     # Add nodes with callbacks
-    graph.add_node("reasoning", llm_decide, callback=log_reason)
+    graph.add_node(
+        "reasoning", llm_decide, callback=log_reason, stream_callback=stream_token
+    )
     graph.add_node("tool", dispatch_tool, callback=log_tool, on_error=tool_on_error)
     graph.add_node(
         "integrate_observation", integrate_observation, callback=log_observation
     )
-    graph.add_node("synthesise_final_answer", synthesise_final_answer)
+    graph.add_node(
+        "synthesise_final_answer", synthesise_final_answer, stream_callback=stream_token
+    )
 
     # Add edges
     graph.add_edge(START, "reasoning")
