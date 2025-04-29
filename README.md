@@ -6,7 +6,6 @@ A Python library for building and running directed graphs of operations, with su
 
 - **Graph-based workflows**: Build flexible, directed workflows where nodes are customizable tasks
 - **Synchronous & asynchronous support**: Define both sync and async nodes without any external dependencies
-- **Real-time streaming**: Built-in support for callbacks in each node, allowing real-time token streaming (e.g., for WebSockets)
 - **Type safety**: Built-in type validation ensures type consistency throughout the workflow
 - **Error handling**: Configurable error handling and retry policies
 - **Branching logic**: Support for conditional branches with async conditions
