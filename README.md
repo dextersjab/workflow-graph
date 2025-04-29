@@ -1,8 +1,6 @@
-# Workflow graph
+# Workflow Graph
 
-A Python library for building and executing directed graphs of operations, with support for both synchronous and asynchronous execution. It's a lightweight alternative to LangGraph that doesn't require LangChain for streaming capabilities.
-
-> **BREAKING CHANGES WARNING**: Version 0.3.0 introduced significant API changes. Please review the documentation carefully when upgrading from earlier versions.
+A Python library for building and running directed graphs of operations, with support for both synchronous and asynchronous execution. It's a lightweight alternative to LangGraph with no dependencies other than the official [typing_extensions](https://typing-extensions.readthedocs.io).
 
 ## Features
 
@@ -55,9 +53,9 @@ pip install git+https://github.com/dextersjab/workflow-graph.git@main
 
 ## Basic usage
 
-### Implementing a state-based workflow
+### Implementing a workflow
 
-Here's how to create a workflow using state management:
+Here's how to create a simple workflow with state management and conditional paths:
 
 ```python
 from workflow_graph import WorkflowGraph, START, END, State
@@ -69,8 +67,8 @@ NumberProcessingState = State[int]
 def add_one(state: NumberProcessingState) -> NumberProcessingState:
     return state.updated(value=state.value + 1)
 
-def check_if_even(state: NumberProcessingState) -> bool:
-    return state.value % 2 == 0
+def calculate_parity(state: NumberProcessingState) -> bool:
+    return state
 
 def even_number(state: NumberProcessingState) -> NumberProcessingState:
     return state.updated(value=f"{state.value} ==> Even")
@@ -83,18 +81,18 @@ workflow = WorkflowGraph()
 
 # Add nodes to the graph
 workflow.add_node("add_one", add_one)
-workflow.add_node("check", lambda state: state)  # Entry node
+workflow.add_node("calculate_parity", calculate_parity)
 workflow.add_node("even_number", even_number)
 workflow.add_node("odd_number", odd_number)
 
 # Define edges for the main workflow
 workflow.add_edge(START, "add_one")
-workflow.add_edge("add_one", "check")
+workflow.add_edge("add_one", "calculate_parity")
 
 # Define conditional edges based on whether the number is even or odd
 workflow.add_conditional_edges(
-    "check", 
-    check_if_even, 
+    "calculate_parity", 
+    lambda state: state.value % 2 == 0, 
     path_map={True: "even_number", False: "odd_number"}
 )
 
@@ -115,13 +113,13 @@ This example creates a workflow that:
 4. Branches to different handlers based on the result
 
 ```mermaid
-stateDiagram-v2
-    [*] --> add_one
-    add_one --> check
-    check --> even_number: true
-    check --> odd_number: false
-    even_number --> [*]
-    odd_number --> [*]
+flowchart TD
+    __start__([Start]) --> add_one[Add one]
+    add_one --> parity[Calculate parity]
+    parity -.->|Yes| even[Even number]
+    parity -.->|No| odd[Odd number]
+    even --> __end__([End])
+    odd --> __end__
 ```
 
 ### Async workflow
@@ -195,7 +193,7 @@ graph.execute(NumberState(value=5))  # Prints: Processed result: 50
 
 ### Generating Mermaid diagrams
 
-WorkflowGraph includes built-in support for generating [Mermaid.js](https://mermaid.js.org/) diagrams to visualize your workflow:
+WorkflowGraph includes built-in support for generating [Mermaid](https://mermaid.js.org/) diagrams to visualise your workflow:
 
 ```python
 # Generate Mermaid diagram code
@@ -203,7 +201,7 @@ mermaid_code = graph.to_mermaid()
 print(mermaid_code)
 ```
 
-The generated diagram uses dashed lines (`-.->`), rather than decision nodes, to represent conditional branches. This provides a cleaner and more accurate representation of how the workflow behaves.
+The generated diagram follows the convention of using dashed lines (`-.->`), rather than decision nodes, to represent conditional branches. This provides a cleaner and more accurate representation of how the workflow behaves.
 
 Mermaid diagrams can be rendered in:
 - GitHub Markdown (just paste the code)
@@ -213,7 +211,7 @@ Mermaid diagrams can be rendered in:
 
 ## Package structure
 
-The library is organized into the following modules:
+The library is organised into the following modules:
 
 - **workflow_graph**: Main package
 - **constants.py**: Defines constants like START and END
@@ -221,21 +219,6 @@ The library is organized into the following modules:
 - **builder.py**: Contains the WorkflowGraph class for building graphs
 - **executor.py**: Contains the CompiledGraph class for executing workflows
 - **exceptions.py**: Contains custom exceptions for better error handling
-
-For backward compatibility, a top-level `workflow_graph.py` file is also provided that re-exports all the public API.
-
-## Improvements in version 0.3.0
-
-The latest version includes several important improvements:
-
-1. **Type safety**: Enhanced type validation and generic type support
-2. **State management**: Simplified state structure with value and data fields
-3. **Error handling**: Consistent on_error naming and improved error propagation
-4. **Edge objects**: Edge objects for better graph structure representation
-5. **Branch handling**: Explicit entry nodes for conditional branches
-6. **Callback timing**: Improved callback execution timing
-7. **Documentation**: Updated examples to match actual implementation
-8. **Cycle support**: By default, cycles are allowed. Use `enforce_acyclic=True` to enforce a DAG structure.
 
 ## Contributing
 

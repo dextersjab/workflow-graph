@@ -21,12 +21,12 @@ def add_one(state: NumberProcessingState) -> NumberProcessingState:
     return state.updated(value=state.value + 1)
 
 
-def process_even_number(state: NumberProcessingState) -> NumberProcessingState:
+def even_number(state: NumberProcessingState) -> NumberProcessingState:
     """Process an even number by appending 'even' to its string representation."""
     return state.updated(value=f"{state.value}, even")
 
 
-def process_odd_number(state: NumberProcessingState) -> NumberProcessingState:
+def odd_number(state: NumberProcessingState) -> NumberProcessingState:
     """Process an odd number by appending 'odd' to its string representation."""
     return state.updated(value=f"{state.value}, odd")
 
@@ -37,26 +37,26 @@ add_one_and_classify_workflow = WorkflowGraph()
 # add nodes to the graph
 add_one_and_classify_workflow.add_node("add_one", add_one)
 add_one_and_classify_workflow.add_node(
-    "check_if_even", lambda state: state
+    "calculate_parity", lambda state: state
 )  # Entry node
-add_one_and_classify_workflow.add_node("process_even_number", process_even_number)
-add_one_and_classify_workflow.add_node("process_odd_number", process_odd_number)
+add_one_and_classify_workflow.add_node("even_number", even_number)
+add_one_and_classify_workflow.add_node("odd_number", odd_number)
 
 # add fixed edges between nodes
 add_one_and_classify_workflow.add_edge(START, "add_one")
-add_one_and_classify_workflow.add_edge("add_one", "check_if_even")
+add_one_and_classify_workflow.add_edge("add_one", "calculate_parity")
 
 # add conditional edge between nodes
 # i.e. choose the target node based on whether the number is even or odd
 add_one_and_classify_workflow.add_conditional_edges(
-    "check_if_even",
+    "calculate_parity",
     lambda state: state.value % 2 == 0,
-    path_map={True: "process_even_number", False: "process_odd_number"},
+    path_map={True: "even_number", False: "odd_number"},
 )
 
 # set fixed finish points
-add_one_and_classify_workflow.add_edge("process_even_number", END)
-add_one_and_classify_workflow.add_edge("process_odd_number", END)
+add_one_and_classify_workflow.add_edge("even_number", END)
+add_one_and_classify_workflow.add_edge("odd_number", END)
 
 # compile and validate the graph
 compiled_add_one_and_classify = add_one_and_classify_workflow.compile()

@@ -162,8 +162,8 @@ def test_mermaid_diagram_generation():
     # Basic assertions to ensure the diagram contains expected elements
     assert "```mermaid" in mermaid
     assert "flowchart TD" in mermaid
-    assert '__start__["START"]' in mermaid
-    assert '__end__["END"]' in mermaid
+    assert '__start__(["START"])' in mermaid
+    assert '__end__(["END"])' in mermaid
     assert 'add["add"]' in mermaid
     assert 'check_even["check_even"]' in mermaid
     assert 'handle_even["handle_even"]' in mermaid

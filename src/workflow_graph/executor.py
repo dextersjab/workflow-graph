@@ -48,8 +48,8 @@ class CompiledGraph:
         mermaid_code = ["```mermaid", "flowchart TD"]
 
         # Define node styles
-        mermaid_code.append(f'    {START}["START"]')
-        mermaid_code.append(f'    {END}["END"]')
+        mermaid_code.append(f'    {START}(["START"])')
+        mermaid_code.append(f'    {END}(["END"])')
 
         # Add custom nodes
         for node_name in self.nodes:
@@ -58,10 +58,19 @@ class CompiledGraph:
         if len(self.nodes) > 0:
             mermaid_code.append("")
 
-        # Add direct edges
+        # Track edges that are part of conditional branches
+        conditional_edges = set()
+        for source, branch_dict in self.branches.items():
+            for _, branch in branch_dict.items():
+                if branch.ends:
+                    for target in branch.ends.values():
+                        conditional_edges.add((source, target))
+
+        # Add direct edges (only if not part of a conditional branch)
         for start, ends in self.edges.items():
             for end in ends:
-                mermaid_code.append(f"    {start} --> {end}")
+                if (start, end) not in conditional_edges:
+                    mermaid_code.append(f"    {start} --> {end}")
 
         # Add conditional edges with dashed lines
         for source, branch_dict in self.branches.items():
