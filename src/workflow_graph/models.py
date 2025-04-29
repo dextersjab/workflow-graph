@@ -115,11 +115,26 @@ class Edge:
 
 @dataclass
 class Node(Generic[T]):
-    """A node in the workflow graph."""
+    """A node in the workflow graph.
+
+    Attributes:
+        name: The name of the node
+        func: The function to execute for this node
+        callback: Optional callback function that receives the final result
+        stream_callback: Optional callback function that receives streaming tokens/chunks
+        on_error: Optional error handler function
+        retries: Number of times to retry on failure
+        retry_delay: Delay between retries in seconds
+        backoff_factor: Optional exponential backoff factor for retries
+        metadata: Optional metadata dictionary
+        input_type: Optional type hint for input
+        output_type: Optional type hint for output
+    """
 
     name: str
     func: Callable[[T], T]
     callback: Optional[Callable[[T], None]] = None
+    stream_callback: Optional[Callable[[str], None]] = None
     on_error: Optional[Callable[[Exception, T], T]] = None
     retries: int = 0
     retry_delay: float = 0.5
