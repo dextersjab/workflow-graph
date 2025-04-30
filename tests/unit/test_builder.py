@@ -2,7 +2,10 @@
 
 from typing import Callable, List, Optional
 
+import pytest
+
 from src.workflow_graph.builder import WorkflowGraph
+from src.workflow_graph.exceptions import InvalidEdgeError
 from src.workflow_graph.models import State
 
 
@@ -100,3 +103,38 @@ def test_add_node_with_streaming_and_state():
     state = node.func("", node.stream_callback)
     assert state.value == "Hello World!"
     assert tokens == ["Hello", " ", "World", "!"]
+
+
+def test_edge_branch_exclusivity():
+    """Test that nodes cannot have both direct and conditional edges."""
+    graph = WorkflowGraph()
+
+    # Add some nodes
+    graph.add_node("node1", lambda x: x)
+    graph.add_node("node2", lambda x: x)
+    graph.add_node("node3", lambda x: x)
+
+    # First add a direct edge
+    graph.add_edge("node1", "node2")
+
+    # Then try to add conditional edges - this should fail
+    with pytest.raises(InvalidEdgeError) as exc_info:
+        graph.add_conditional_edges(
+            "node1", lambda x: True, {True: "node3", False: "node2"}
+        )
+    assert "already has direct edges" in str(exc_info.value)
+
+    # Now try the reverse - first add conditional edges
+    graph = WorkflowGraph()
+    graph.add_node("node1", lambda x: x)
+    graph.add_node("node2", lambda x: x)
+    graph.add_node("node3", lambda x: x)
+
+    graph.add_conditional_edges(
+        "node1", lambda x: True, {True: "node3", False: "node2"}
+    )
+
+    # Then try to add a direct edge - this should fail
+    with pytest.raises(InvalidEdgeError) as exc_info:
+        graph.add_edge("node1", "node2")
+    assert "already has conditional branches" in str(exc_info.value)

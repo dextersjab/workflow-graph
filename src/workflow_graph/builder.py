@@ -156,6 +156,7 @@ class WorkflowGraph(Generic[T]):
 
         Raises:
             ValueError: If using reserved nodes incorrectly
+            InvalidEdgeError: If the source node already has conditional branches
         """
         if self.compiled:
             logger.warning(
@@ -170,6 +171,13 @@ class WorkflowGraph(Generic[T]):
             raise InvalidEdgeError(f"Start node '{start_key}' does not exist")
         if end_key not in self.nodes and end_key != END:
             raise InvalidEdgeError(f"End node '{end_key}' does not exist")
+
+        # Check if the source node already has conditional branches
+        if start_key in self.branches and self.branches[start_key]:
+            raise InvalidEdgeError(
+                f"Cannot add a direct edge from '{start_key}' because it already has conditional branches. "
+                "Remove the conditional branches first."
+            )
 
         edge = Edge(source=start_key, target=end_key, callback=callback)
         self.edges[start_key].add(edge)
@@ -191,7 +199,7 @@ class WorkflowGraph(Generic[T]):
 
         Raises:
             ValueError: If a branch with the same name already exists
-            InvalidEdgeError: If trying to add conditional edges from START
+            InvalidEdgeError: If trying to add conditional edges from START or if the source node already has direct edges
             TypeError: If condition return type is not bool, Enum, or Literal
             ValidationError: If path_map does not cover all possible condition values
         """
@@ -214,6 +222,13 @@ class WorkflowGraph(Generic[T]):
 
         if source not in self.nodes:
             raise InvalidNodeNameError(f"Source node '{source}' does not exist")
+
+        # Check if the source node already has direct edges
+        if source in self.edges and self.edges[source]:
+            raise InvalidEdgeError(
+                f"Cannot add conditional edges from '{source}' because it already has direct edges. "
+                "Remove the direct edges first."
+            )
 
         # Get branch name from condition function
         name = getattr(condition, "__name__", "condition")
