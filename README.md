@@ -22,6 +22,34 @@ A Python library for building and running directed graphs of operations, with su
 pip install workflow-graph
 ```
 
+### Development Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/dextersjab/workflow-graph.git
+cd workflow-graph
+```
+
+2. Create and activate a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+3. Install the package in development mode with all dependencies:
+```bash
+# Install with development tools (black, isort, flake8, mypy, pytest)
+pip install -e ".[dev]"
+
+# Install with example dependencies (pydantic)
+pip install -e ".[dev,examples]"
+```
+
+4. Run the tests:
+```bash
+pytest
+```
+
 ### Latest alpha/beta version
 
 ```bash
