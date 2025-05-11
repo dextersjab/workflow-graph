@@ -17,8 +17,8 @@ class State(Generic[T]):
         errors: List of error messages encountered during execution
     """
 
-    value: T | None
-    current_node: str | None = None
+    value: T = field()  # Required field, no default
+    current_node: str | None = field(default=None)
     trajectory: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
