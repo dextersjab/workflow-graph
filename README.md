@@ -14,6 +14,38 @@ A Python library for building and running directed graphs of operations, with su
 - **Generic types**: Support for generic types in workflow state
 - **Cycle support**: By default, cycles are allowed. Use `enforce_acyclic=True` to enforce a DAG structure
 
+## Core Concepts
+
+### State Management
+
+The `State` class is a fundamental component that represents the data flowing through your workflow. It's designed to be explicit about what you're tracking:
+
+```python
+@dataclass
+class State(Generic[T]):
+    value: T = field()  # Required field - represents the main data being processed
+    current_node: str | None = field(default=None)  # Current node in execution
+    trajectory: list[str] = field(default_factory=list)  # Execution path
+    errors: list[str] = field(default_factory=list)  # Error history
+```
+
+Key design decisions:
+- `value` is a required field because it represents the explicit data you want to track through your workflow
+- The type parameter `T` allows you to specify exactly what kind of data your workflow processes
+- Additional fields (`current_node`, `trajectory`, `errors`) track workflow execution metadata
+- The class is immutable - all updates return a new instance via `updated()`
+
+Example of a custom state:
+```python
+@dataclass
+class ChatState(State[Dict[str, Any]]):
+    """State for chat workflow."""
+    value: Dict[str, Any] = field(default_factory=dict)  # Override with default
+    messages: List[Dict[str, Any]] = field(default_factory=list)
+    temperature: float = 0
+    model: str = "gpt-4"
+```
+
 ## Installation
 
 ### From PyPI (recommended)
